@@ -17,10 +17,12 @@ import geventwebsocket
 from django.conf import settings
 from django.core import signals
 from django.core.handlers.base import BaseHandler
-from django.core.handlers.wsgi import WSGIRequest
+from django.core.handlers.wsgi import WSGIRequest,WSGIHandler
 from django.db import connection, transaction
 
 from dddp import alea, this, ADDED, CHANGED, REMOVED, MeteorError
+
+dj_handler=WSGIHandler()
 
 
 def safe_call(func, *args, **kwargs):
@@ -142,7 +144,22 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
 
     def on_open(self):
         """Handle new websocket connection."""
+        from dddp.models import get_meteor_id,meteor_random_id
+
         this.request = WSGIRequest(self.ws.environ)
+        if dj_handler._request_middleware is None:
+            dj_handler.load_middleware()
+
+        for middleware_method in dj_handler._request_middleware:
+            response = middleware_method(this.request)
+            if response:
+                return response
+        if this.request.user.pk:
+            this.user_id = this.request.user.pk
+            this.user_ddp_id = get_meteor_id(this.request.user)
+            # silent subscription (sans sub/nosub msg) to LoggedInUser pub
+            this.user_sub_id = meteor_random_id()
+
         this.ws = self
         this.send = self.send
         this.reply = self.reply
