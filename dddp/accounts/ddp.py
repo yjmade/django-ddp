@@ -332,6 +332,8 @@ class Auth(APIMixin):
     @staticmethod
     def check_secure():
         """Check request, return False if using SSL or local connection."""
+        if settings.DEBUG:
+            return True
         if this.request.is_secure():
             return True  # using SSL
         elif this.request.META['REMOTE_ADDR'] in [

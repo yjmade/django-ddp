@@ -11,6 +11,8 @@ import gevent
 from gevent.backdoor import BackdoorServer
 import gevent.event
 import gevent.pywsgi
+from dddp import greenify
+greenify()
 import geventwebsocket
 import geventwebsocket.handler
 
@@ -305,6 +307,7 @@ def serve(listen, verbosity=1, debug_port=0, **ssl_args):
 
 def main():
     """Main entry point for `dddp` command."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     django = parser.add_argument_group('Django Options')
     django.add_argument(
@@ -351,6 +354,4 @@ def main():
 
 
 if __name__ == '__main__':
-    from dddp import greenify
-    greenify()
     main()

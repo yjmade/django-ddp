@@ -19,6 +19,9 @@ _GREEN = {}
 def greenify():
     """Patch threading and psycopg2 modules for green threads."""
     # don't greenify twice.
+    print "asd"
+    import traceback
+    traceback.print_stack()
     if _GREEN:
         return
     _GREEN[True] = True

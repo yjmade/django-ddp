@@ -164,8 +164,9 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
             )
         this.subs = {}
         safe_call(self.logger.info, '+ %s OPEN', self)
-        self.send('o')
-        self.send('a["{\\"server_id\\":\\"0\\"}"]')
+        # self.send('o')
+        # self.send('a["{\\"server_id\\":\\"0\\"}"]')
+        self.send({"server_id":"0"})
 
     def __str__(self):
         """Show remote address that connected to us."""
@@ -198,6 +199,7 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
     def ddp_frames_from_message(self, message):
         """Yield DDP messages from a raw WebSocket message."""
         # parse message set
+        print("received",message)
         try:
             msgs = ejson.loads(message)
         except ValueError:
@@ -205,30 +207,31 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
                 'error', error=400, reason='Data is not valid EJSON',
             )
             raise StopIteration
-        if not isinstance(msgs, list):
-            self.reply(
-                'error', error=400, reason='Invalid EJSON messages',
-            )
-            raise StopIteration
-        # process individual messages
-        while msgs:
-            # pop raw message from the list
-            raw = msgs.pop(0)
-            # parse message payload
-            try:
-                data = ejson.loads(raw)
-            except (TypeError, ValueError):
-                data = None
-            if not isinstance(data, dict):
-                self.reply(
-                    'error', error=400,
-                    reason='Invalid SockJS DDP payload',
-                    offendingMessage=raw,
-                )
-            yield data
-            if msgs:
-                # yield to other greenlets before processing next msg
-                gevent.sleep()
+        yield msgs
+        # if not isinstance(msgs, list):
+        #     self.reply(
+        #         'error', error=400, reason='Invalid EJSON messages',
+        #     )
+        #     raise StopIteration
+        # # process individual messages
+        # while msgs:
+        #     # pop raw message from the list
+        #     raw = msgs.pop(0)
+        #     # parse message payload
+        #     try:
+        #         data = ejson.loads(raw)
+        #     except (TypeError, ValueError):
+        #         data = None
+        #     if not isinstance(data, dict):
+        #         self.reply(
+        #             'error', error=400,
+        #             reason='Invalid SockJS DDP payload',
+        #             offendingMessage=raw,
+        #         )
+        #     yield data
+        #     if msgs:
+        #         # yield to other greenlets before processing next msg
+        #         gevent.sleep()
 
     def process_ddp(self, data):
         """Process a single DDP message."""
@@ -241,11 +244,14 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
                 offendingMessage=data,
             )
             return
-        try:
             # dispatch message
-            self.dispatch(msg, data)
+        try:
+            import ipdb
+            with ipdb.launch_ipdb_on_exception():
+                self.dispatch(msg, data)
         except Exception as err:  # pylint: disable=broad-except
             # This should be the only protocol exception handler
+            traceback.print_exc()
             kwargs = {
                 'msg': {'method': 'result'}.get(msg, 'error'),
             }
@@ -353,10 +359,13 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
                             ids.remove(meteor_id)
                         except KeyError:
                             continue  # client doesn't have this, don't send.
-                data = 'a%s' % ejson.dumps([ejson.dumps(data)])
+                # data = 'a%s' % ejson.dumps([ejson.dumps(data)])
+                data=ejson.dumps(data)
+
             # send message
             safe_call(self.logger.debug, '> %s %r', self, data)
             try:
+                print("send %s" % data)
                 self.ws.send(data)
             except geventwebsocket.WebSocketError:
                 self.ws.close()
