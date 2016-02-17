@@ -586,7 +586,7 @@ class DDP(APIMixin):
     def sub_unique_objects(self, obj, params=None, pub=None, *args, **kwargs):
         """Return objects that are only visible through given subscription."""
         if params is None:
-            params = ejson.loads(obj.params_ejson)
+            params = obj.params_ejson
         if pub is None:
             pub = self.get_pub_by_name(obj.publication)
         queries = collections.OrderedDict(
@@ -651,7 +651,7 @@ class DDP(APIMixin):
             user_id=getattr(this, 'user_id', None),
             defaults={
                 'publication': pub.name,
-                'params_ejson': ejson.dumps(params),
+                'params_ejson': params,
             },
         )
         this.subs.setdefault(sub.publication, set()).add(sub.pk)

@@ -159,6 +159,7 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
             this.user_ddp_id = get_meteor_id(this.request.user)
             # silent subscription (sans sub/nosub msg) to LoggedInUser pub
             this.user_sub_id = meteor_random_id()
+            this.user=this.request.user
 
         this.ws = self
         this.send = self.send

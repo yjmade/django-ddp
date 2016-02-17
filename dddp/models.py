@@ -15,6 +15,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.utils.encoding import python_2_unicode_compatible
 import ejson
 from dddp import meteor_random_id
+from django_pgjsonb.fields import JSONField
 
 
 def get_meteor_id(obj_or_model, obj_pk=None):
@@ -177,8 +178,8 @@ def get_object_ids(model, meteor_ids):
     else:
         content_type = ContentType.objects.get_for_model(model)
         query = ObjectMapping.objects.filter(
-                content_type=content_type,
-                meteor_id__in=meteor_ids,
+            content_type=content_type,
+            meteor_id__in=meteor_ids,
         ).values_list('meteor_id', 'object_id')
     for meteor_id, object_id in query:
         result[meteor_id] = object_id
@@ -325,7 +326,7 @@ class Subscription(models.Model, object):
     sub_id = models.CharField(max_length=17)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, blank=True, null=True)
     publication = models.CharField(max_length=255)
-    params_ejson = models.TextField(default='{}')
+    params_ejson = JSONField(default={},encode_kwargs={"cls":ejson.EJSONEncoder},decode_kwargs={"cls":ejson.EJSONDecoder})
 
     class Meta(object):
 
@@ -347,11 +348,11 @@ class Subscription(models.Model, object):
 
     def get_params(self):
         """Get params dict."""
-        return ejson.loads(self.params_ejson or '{}')
+        return self.params_ejson or {}
 
     def set_params(self, vals):
         """Set params dict."""
-        self.params_ejson = ejson.dumps(vals or {})
+        self.params_ejson = vals or {}
 
     params = property(get_params, set_params)
 
