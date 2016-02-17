@@ -519,16 +519,19 @@ class Publication(APIMixin):
 
         # stash the old user details
         old_user_id = this.user_id
+        old_user = this.user
         old_user_ddp_id = this.user_ddp_id
         # apply the desired user details
         this.user_id = None if user is None else user.pk
         this.user_ddp_id = None if user is None else get_meteor_id(user)
+        this.user=user
         try:
             return get_queries(*params)
         finally:
             # restore the old user details
             this.user_id = old_user_id
             this.user_ddp_id = old_user_ddp_id
+            this.user=old_user
 
     @api_endpoint
     def collections(self, *params):
@@ -583,17 +586,17 @@ class DDP(APIMixin):
         else:
             raise TypeError('Invalid query spec: %r' % qs)
 
-    def sub_unique_objects(self, obj, params=None, pub=None, *args, **kwargs):
+    def sub_unique_objects(self, sub, params=None, pub=None, *args, **kwargs):
         """Return objects that are only visible through given subscription."""
         if params is None:
-            params = obj.params_ejson
+            params = sub.params_ejson
         if pub is None:
-            pub = self.get_pub_by_name(obj.publication)
+            pub = self.get_pub_by_name(sub.publication)
         queries = collections.OrderedDict(
             (col, qs) for (qs, col) in (
                 self.qs_and_collection(qs)
                 for qs
-                in pub.user_queries(obj.user, *params)
+                in pub.user_queries(sub.user, *params)
             )
         )
         # mergebox via MVCC!  For details on how this is possible, read this:
@@ -602,7 +605,7 @@ class DDP(APIMixin):
             (
                 col,
                 col.objects_for_user(
-                    user=obj.user_id,
+                    user=sub.user_id,
                     qs=qs,
                     *args, **kwargs
                 ),
@@ -611,10 +614,10 @@ class DDP(APIMixin):
             in queries.items()
         )
         for other in Subscription.objects.filter(
-                connection=obj.connection_id,
+                connection=sub.connection_id,
                 collections__collection_name__in=[col.name for col in queries],
         ).exclude(
-            pk=obj.pk,
+            pk=sub.pk,
         ).order_by('pk').distinct():
             other_pub = self.get_pub_by_name(other.publication)
             for qs in other_pub.user_queries(other.user, *other.params):
@@ -703,16 +706,16 @@ class DDP(APIMixin):
         sub = Subscription.objects.get(
             connection=this.ws.connection, sub_id=id_,
         )
-        for col, qs in self.sub_unique_objects(sub):
-            if isinstance(col.model._meta.pk, AleaIdField):
-                meteor_ids = None
-            else:
-                meteor_ids = get_meteor_ids(
-                    qs.model, qs.values_list('pk', flat=True),
-                )
-            for obj in qs:
-                payload = col.obj_change_as_msg(obj, REMOVED, meteor_ids)
-                this.send(payload)
+        # for col, qs in self.sub_unique_objects(sub):
+        #     if isinstance(col.model._meta.pk, AleaIdField):
+        #         meteor_ids = None
+        #     else:
+        #         meteor_ids = get_meteor_ids(
+        #             qs.model, qs.values_list('pk', flat=True),
+        #         )
+        #     for obj in qs:
+        #         payload = col.obj_change_as_msg(obj, REMOVED, meteor_ids)
+        #         this.send(payload)
         this.subs[sub.publication].remove(sub.pk)
         sub.delete()
         if not silent:

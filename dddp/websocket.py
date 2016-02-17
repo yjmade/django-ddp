@@ -144,22 +144,7 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
 
     def on_open(self):
         """Handle new websocket connection."""
-        from dddp.models import get_meteor_id,meteor_random_id
-
         this.request = WSGIRequest(self.ws.environ)
-        if dj_handler._request_middleware is None:
-            dj_handler.load_middleware()
-
-        for middleware_method in dj_handler._request_middleware:
-            response = middleware_method(this.request)
-            if response:
-                return response
-        if this.request.user.pk:
-            this.user_id = this.request.user.pk
-            this.user_ddp_id = get_meteor_id(this.request.user)
-            # silent subscription (sans sub/nosub msg) to LoggedInUser pub
-            this.user_sub_id = meteor_random_id()
-            this.user=this.request.user
 
         this.ws = self
         this.send = self.send
@@ -185,6 +170,24 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
         # self.send('o')
         # self.send('a["{\\"server_id\\":\\"0\\"}"]')
         self.send({"server_id":"0"})
+
+    def login_with_cookie(self):
+        from dddp.models import get_meteor_id,meteor_random_id
+        from dddp.api import API
+        if dj_handler._request_middleware is None:
+            dj_handler.load_middleware()
+
+        for middleware_method in dj_handler._request_middleware:
+            response = middleware_method(this.request)
+            if response:
+                return response
+        if this.request.user.pk:
+            this.user_id = this.request.user.pk
+            this.user_ddp_id = get_meteor_id(this.request.user)
+            # silent subscription (sans sub/nosub msg) to LoggedInUser pub
+            this.user_sub_id = meteor_random_id()
+            this.user=this.request.user
+            API.do_sub(this.user_sub_id, 'LoggedInUser', silent=True)
 
     def __str__(self):
         """Show remote address that connected to us."""
@@ -432,6 +435,7 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
             self.pgworker.connections[self.connection.pk] = self
             atexit.register(self.on_close, 'Shutting down.')
             self.reply('connected', session=self.connection.connection_id)
+            self.login_with_cookie()
     recv_connect.err = 'Malformed connect'
 
     def recv_ping(self, id_=None):

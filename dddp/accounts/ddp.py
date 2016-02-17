@@ -427,6 +427,7 @@ class Auth(APIMixin):
 
     def do_login(self, user):
         """Login a user."""
+        this.user=user
         this.user_id = user.pk
         this.user_ddp_id = get_meteor_id(user)
         # silent subscription (sans sub/nosub msg) to LoggedInUser pub
