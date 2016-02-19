@@ -29,6 +29,7 @@ from dddp import AlreadyRegistered, this, ADDED, CHANGED, REMOVED, MeteorError
 from dddp.models import (
     AleaIdField, Connection, Subscription, get_meteor_id, get_meteor_ids,
 )
+from functools import wraps
 
 
 API_ENDPOINT_DECORATORS = [
@@ -972,6 +973,14 @@ class DDP(APIMixin):
                         ],
                     )
                     header['seq'] += 1  # increment sequence.
+
+    def login_required(self,func):
+        @wraps(func)
+        def wrap(*args,**kwargs):
+            if not (getattr(this,"user",None) and this.user.pk):
+                raise MeteorError(403,"Not login")
+            return func(*args,**kwargs)
+        return wrap
 
 
 API = DDP()

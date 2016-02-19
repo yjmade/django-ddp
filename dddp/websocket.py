@@ -10,7 +10,7 @@ import sys
 import traceback
 
 from six.moves import range as irange
-
+import six
 import ejson
 import gevent
 import geventwebsocket
@@ -220,7 +220,8 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
     def ddp_frames_from_message(self, message):
         """Yield DDP messages from a raw WebSocket message."""
         # parse message set
-        print("received",message)
+        print("receive %s-%s: %s" % (this.request.META["REMOTE_ADDR"],this.user,message))
+
         try:
             msgs = ejson.loads(message)
         except ValueError:
@@ -266,53 +267,55 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
             )
             return
             # dispatch message
-        try:
-            import ipdb
-            with ipdb.launch_ipdb_on_exception():
+        import ipdb
+        with ipdb.launch_ipdb_on_exception():
+            try:
                 self.dispatch(msg, data)
-        except Exception as err:  # pylint: disable=broad-except
-            # This should be the only protocol exception handler
-            traceback.print_exc()
-            kwargs = {
-                'msg': {'method': 'result'}.get(msg, 'error'),
-            }
-            if msg_id is not None:
-                kwargs['id'] = msg_id
-            if isinstance(err, MeteorError):
-                error = err.as_dict()
-            else:
-                error = {
-                    'error': 500,
-                    'reason': 'Internal server error',
+            except Exception as err:  # pylint: disable=broad-except
+                # This should be the only protocol exception handler
+                traceback.print_exc()
+                kwargs = {
+                    'msg': {'method': 'result'}.get(msg, 'error'),
                 }
-            if kwargs['msg'] == 'error':
-                kwargs.update(error)
-            else:
-                kwargs['error'] = error
-            if not isinstance(err, MeteorError):
-                # not a client error, should always be logged.
-                stack, _ = safe_call(
-                    self.logger.error, '%r %r', msg, data, exc_info=1,
-                )
-                if stack is not None:
-                    # something went wrong while logging the error, revert to
-                    # writing a stack trace to stderr.
-                    traceback.print_exc(file=sys.stderr)
-                    sys.stderr.write(
-                        'Additionally, while handling the above error the '
-                        'following error was encountered:\n'
+                if msg_id is not None:
+                    kwargs['id'] = msg_id
+                if isinstance(err, MeteorError):
+                    error = err.as_dict()
+                else:
+                    tp,value,tb=sys.exc_info()
+                    six.reraise(tp, value, tb)
+                    error = {
+                        'error': 500,
+                        'reason': 'Internal server error',
+                    }
+                if kwargs['msg'] == 'error':
+                    kwargs.update(error)
+                else:
+                    kwargs['error'] = error
+                if not isinstance(err, MeteorError):
+                    # not a client error, should always be logged.
+                    stack, _ = safe_call(
+                        self.logger.error, '%r %r', msg, data, exc_info=1,
                     )
-                    sys.stderr.write(stack)
-            elif settings.DEBUG:
-                print('ERROR: %s' % err)
-                dprint('msg', msg)
-                dprint('data', data)
-                error.setdefault('details', traceback.format_exc())
-                # print stack trace for client errors when DEBUG is True.
-                print(error['details'])
-            self.reply(**kwargs)
-            if msg_id and msg == 'method':
-                self.reply('updated', methods=[msg_id])
+                    if stack is not None:
+                        # something went wrong while logging the error, revert to
+                        # writing a stack trace to stderr.
+                        traceback.print_exc(file=sys.stderr)
+                        sys.stderr.write(
+                            'Additionally, while handling the above error the '
+                            'following error was encountered:\n'
+                        )
+                        sys.stderr.write(stack)
+                elif settings.DEBUG:
+                    print('ERROR: %s' % err)
+                    dprint('msg', msg)
+                    dprint('data', data)
+                    error.setdefault('details', traceback.format_exc())
+                    # print stack trace for client errors when DEBUG is True.
+                    print(error['details'])
+                self.reply(**kwargs)
+                if msg_id and msg == 'method':
+                    self.reply('updated', methods=[msg_id])
 
     @transaction.atomic
     def dispatch(self, msg, kwargs):
@@ -386,7 +389,10 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
             # send message
             safe_call(self.logger.debug, '> %s %r', self, data)
             try:
-                print("send %s" % data)
+                print("send %s-%s: %s" % (this.request.META["REMOTE_ADDR"],this.user,data))
+            except:
+                print("send",data)
+            try:
                 self.ws.send(data)
             except geventwebsocket.WebSocketError:
                 self.ws.close()
