@@ -444,7 +444,7 @@ class Collection(APIMixin):
                 not field.null
             ) and (
                 field.name == 'aid'
-            ):
+            ) and not field.primary_key:
                 # This will be sent as the `id`, don't send it in `fields`.
                 fields.pop(field.name)
         for field in meta.local_many_to_many:
@@ -505,7 +505,7 @@ class Publication(APIMixin):
                 raise NotImplementedError(
                     'Must set either queries or implement get_queries method.',
                 )
-            if params:
+            if len(params)>1:  # Env object
                 raise NotImplementedError(
                     'Publication params not implemented on %r publication.' % (
                         self.name,
@@ -589,7 +589,7 @@ class DDP(APIMixin):
     def sub_unique_objects(self, sub, params=None, pub=None, *args, **kwargs):
         """Return objects that are only visible through given subscription."""
         if params is None:
-            params = sub.params_ejson
+            params = sub.params
         if pub is None:
             pub = self.get_pub_by_name(sub.publication)
         queries = collections.OrderedDict(
@@ -665,7 +665,7 @@ class DDP(APIMixin):
         # re-read from DB so we can get transaction ID (xmin)
         sub = Subscription.objects.extra(**XMIN).get(pk=sub.pk)
         for col, qs in self.sub_unique_objects(
-                sub, params, pub, xmin__lte=sub.xmin,
+                sub, sub.params, pub, xmin__lte=sub.xmin,
         ):
             sub.collections.create(
                 model_name=model_name(qs.model),

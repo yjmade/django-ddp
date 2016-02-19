@@ -327,6 +327,7 @@ class Subscription(models.Model, object):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, blank=True, null=True)
     publication = models.CharField(max_length=255)
     params_ejson = JSONField(default={},encode_kwargs={"cls":ejson.EJSONEncoder},decode_kwargs={"cls":ejson.EJSONDecoder})
+    created_time=models.DateTimeField(auto_now_add=True)
 
     class Meta(object):
 
@@ -335,6 +336,8 @@ class Subscription(models.Model, object):
         unique_together = [
             ['connection', 'sub_id'],
         ]
+
+    Env=collections.namedtuple("Env", ["user","sub_time"])
 
     def __str__(self):
         """Text representation of subscription."""
@@ -348,11 +351,16 @@ class Subscription(models.Model, object):
 
     def get_params(self):
         """Get params dict."""
-        return self.params_ejson or {}
+        params = self.params_ejson or []
+        params.insert(0,self.Env(
+            self.user,
+            self.created_time
+        ))
+        return params
 
     def set_params(self, vals):
         """Set params dict."""
-        self.params_ejson = vals or {}
+        self.params_ejson = vals or []
 
     params = property(get_params, set_params)
 
