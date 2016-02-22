@@ -450,7 +450,7 @@ class Collection(APIMixin):
                 fields.pop(field.name)
         for field in meta.local_many_to_many:
             fields['%s_ids' % field.name] = get_meteor_ids(
-                field.rel.to, fields.pop(field.name),
+                field.rel.to, getattr(obj,field.name).values_list("pk",flat=True),
             ).values()
         return data
 
