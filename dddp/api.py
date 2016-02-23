@@ -729,11 +729,15 @@ class DDP(APIMixin):
             handler = self.api_path_map()[method]
         except KeyError:
             raise MeteorError(404, 'Method not found', method)
-        try:
-            inspect.getcallargs(handler, *params)
-        except TypeError as err:
-            raise MeteorError(400, '%s' % err)
-        result = handler(*params)
+        if isinstance(params,dict):
+            result = handler(**params)
+        else:
+            try:
+                inspect.getcallargs(handler, *params)
+            except TypeError as err:
+                raise MeteorError(400, '%s' % err)
+            result = handler(*params)
+
         msg = {'msg': 'result', 'id': id_}
         if result is not None:
             msg['result'] = result
