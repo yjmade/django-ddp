@@ -122,6 +122,9 @@ class Users(Collection):
         'pk',
     ]
 
+    def user_ids_for_object(self,obj):
+        return [obj.pk]
+
     def serialize(self, obj, *args, **kwargs):
         """Serialize user as per Meteor accounts serialization."""
         # use default serialization, then modify to suit our needs.
