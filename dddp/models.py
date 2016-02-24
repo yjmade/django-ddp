@@ -15,6 +15,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.utils.encoding import python_2_unicode_compatible
 import ejson
 from dddp import meteor_random_id
+from django.core.cache import cache
 from django_pgjsonb.fields import JSONField
 
 
@@ -62,19 +63,24 @@ def get_meteor_id(obj_or_model, obj_pk=None):
 
     # fallback to using AleaIdField from ObjectMapping model.
     content_type = ContentType.objects.get_for_model(model)
-    try:
-        return ObjectMapping.objects.values_list(
-            'meteor_id', flat=True,
-        ).get(
-            content_type=content_type,
-            object_id=obj_pk,
-        )
-    except ObjectDoesNotExist:
-        return ObjectMapping.objects.create(
-            content_type=content_type,
-            object_id=obj_pk,
-            meteor_id=meteor_random_id('/collection/%s' % meta),
-        ).meteor_id
+    cache_name="DDP_OBJECTMAP_%s_%s" % (content_type.pk,obj_pk)
+    meteor_id=cache.get(cache_name)
+    if not meteor_id:
+        try:
+            meteor_id = ObjectMapping.objects.values_list(
+                'meteor_id', flat=True,
+            ).get(
+                content_type=content_type,
+                object_id=obj_pk,
+            )
+        except ObjectDoesNotExist:
+            meteor_id = ObjectMapping.objects.create(
+                content_type=content_type,
+                object_id=obj_pk,
+                meteor_id=meteor_random_id('/collection/%s' % meta),
+            ).meteor_id
+        cache.set(cache_name,meteor_id)
+    return meteor_id
 get_meteor_id.short_description = 'DDP ID'  # nice title for admin list_display
 
 
