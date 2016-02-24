@@ -11,6 +11,7 @@ import uuid
 from django.conf import settings
 import django.contrib.postgres.fields
 from django.db import connections, router, transaction
+from django.db import models
 from django.db.models import Q
 try:
     # pylint: disable=E0611
@@ -230,11 +231,16 @@ class Collection(APIMixin):
     queryset = property(get_queryset)
 
     @cached_property
-    def reversed_user_rel(self):
+    def user_rels(self):
         if not self.user_rel:
             return None
-        user_rels=[self.user_rel] if isinstance(self.user_rel, basestring) else self.user_rel
-        return [self.get_reversed_user_rel(user_rel) for user_rel in user_rels]
+        return [self.user_rel] if isinstance(self.user_rel, basestring) else self.user_rel
+
+    @cached_property
+    def reversed_user_rel(self):
+        if not self.user_rels:
+            return None
+        return [self.get_reversed_user_rel(user_rel) for user_rel in self.user_rels]
 
     def get_reversed_user_rel(self,user_rel):
         fields=user_rel.split("__")
@@ -578,6 +584,7 @@ class DDP(APIMixin):
     def __init__(self):
         """DDP API init."""
         self._registry = {}
+        self._model_cols=collections.defaultdict(list)
         self._ddp_subscribers = {}
 
     def get_collection(self, model):
@@ -779,6 +786,8 @@ class DDP(APIMixin):
                 )
             self._registry[api.api_path_prefix] = api
             self.clear_api_path_map_cache()
+            if isinstance(api, Collection):
+                self._model_cols[api.model].append(api)
 
     @api_endpoint
     def schema(self):
@@ -896,20 +905,19 @@ class DDP(APIMixin):
     def valid_subscribers(self,model,obj,using):
         col_connection_ids = collections.defaultdict(set)
         user_q=Q()
-        cols=SubscriptionCollection.objects.filter(model_name=model_name(model)).values_list("collection_name",flat=True).order_by().distinct()
-        for col_name in cols:
+        cols=self._model_cols[model]
+        for col in cols:
             col_q=Q()
 
-            col=API.get_col_by_name(col_name)
             if not col.reversed_user_rel:
                 continue
             for reversed_user_rel in col.reversed_user_rel:
                 col_q |= Q(**{"__".join(["user"]+filter(None,[reversed_user_rel])):obj})
-            col_q=Q(collections__collection_name=col_name) & col_q
+            col_q=Q(collections__collection_name=col.name) & col_q
             user_q |= col_q
         for sub in Subscription.objects.filter(
             collections__model_name=model_name(model),
-        ).filter(user_q).distinct("id").prefetch_related('collections'):
+        ).filter(user_q).distinct("id").select_related("user"):
             pub = self.get_pub_by_name(sub.publication)
             try:
                 queries = list(pub.user_queries(sub.user, *sub.params))
