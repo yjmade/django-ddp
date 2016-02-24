@@ -33,11 +33,13 @@ def get_meteor_id(obj_or_model, obj_pk=None):
     # try getting value of AleaIdField straight from instance if possible
     if isinstance(obj_or_model, model):
         # obj_or_model is an instance, not a model.
-        if isinstance(meta.pk, AleaIdField):
-            return obj_or_model.pk
         if obj_pk is None:
             # fall back to primary key, but coerce as string type for lookup.
             obj_pk = str(obj_or_model.pk)
+
+    if isinstance(meta.pk, AleaIdField):
+        return obj_pk
+
     alea_unique_fields = [
         field
         for field in meta.local_fields
