@@ -21,13 +21,14 @@ from django.utils.encoding import force_text
 from django.utils.module_loading import import_string
 from django.db import DatabaseError
 from django.db.models import signals
+from django.utils.functional import cached_property
 import ejson
 import six
 
 # django-ddp
 from dddp import AlreadyRegistered, this, ADDED, CHANGED, REMOVED, MeteorError
 from dddp.models import (
-    AleaIdField, Connection, Subscription, get_meteor_id, get_meteor_ids,
+    AleaIdField, Connection, Subscription, SubscriptionCollection,get_meteor_id, get_meteor_ids,
 )
 from functools import wraps
 
@@ -227,6 +228,26 @@ class Collection(APIMixin):
         return qs
 
     queryset = property(get_queryset)
+
+    @cached_property
+    def reversed_user_rel(self):
+        if not self.user_rel:
+            return None
+        user_rels=[self.user_rel] if isinstance(self.user_rel, basestring) else self.user_rel
+        return [self.get_reversed_user_rel(user_rel) for user_rel in user_rels]
+
+    def get_reversed_user_rel(self,user_rel):
+        fields=user_rel.split("__")
+        model=self.model
+        reverse_name=[]
+        for field_name in fields:
+            if field_name=="pk":
+                field=model._meta.pk
+            else:
+                field=model._meta.get_field(field_name)
+                model=field.related_model
+                reverse_name.append(field.related_query_name())
+        return "__".join(reversed(reverse_name))
 
     @property
     def user_model(self):
@@ -872,13 +893,23 @@ class DDP(APIMixin):
             using=kwargs['using'],
         )
 
-    def valid_subscribers(self, model, obj, using):
-        """Calculate valid subscribers (connections) for obj."""
-        col_user_ids = {}
+    def valid_subscribers(self,model,obj,using):
         col_connection_ids = collections.defaultdict(set)
+        user_q=Q()
+        cols=SubscriptionCollection.objects.filter(model_name=model_name(model)).values_list("collection_name",flat=True).order_by().distinct()
+        for col_name in cols:
+            col_q=Q()
+
+            col=API.get_col_by_name(col_name)
+            if not col.reversed_user_rel:
+                continue
+            for reversed_user_rel in col.reversed_user_rel:
+                col_q |= Q(**{"__".join(["user"]+filter(None,[reversed_user_rel])):obj})
+            col_q=Q(collections__collection_name=col_name) & col_q
+            user_q |= col_q
         for sub in Subscription.objects.filter(
-                collections__model_name=model_name(model),
-        ).prefetch_related('collections'):
+            collections__model_name=model_name(model),
+        ).filter(user_q).distinct("id").prefetch_related('collections'):
             pub = self.get_pub_by_name(sub.publication)
             try:
                 queries = list(pub.user_queries(sub.user, *sub.params))
@@ -892,28 +923,12 @@ class DDP(APIMixin):
                 # check if obj is an instance of the model for the queryset
                 if qs.model is not model:
                     continue  # wrong model on queryset
-
                 # check if obj is included in this subscription
                 if not qs.filter(pk=obj.pk).exists():
                     continue  # subscription doesn't include this obj
 
-                # filter qs using user_rel paths on collection
-                # retreieve list of allowed users via colleciton
-                try:
-                    user_ids = col_user_ids[col.__class__]
-                except KeyError:
-                    user_ids = col_user_ids[col.__class__] = \
-                        col.user_ids_for_object(obj)
-
-                # check if user is in permitted list of users
-                if user_ids is None:
-                    pass  # unrestricted collection, anyone permitted to see.
-                elif sub.user_id not in user_ids:
-                    continue  # not for this user
-
                 col_connection_ids[col].add(sub.connection_id)
 
-        # result is {colleciton: set([connection_id])}
         return col_connection_ids
 
     def send_notify(self, model, obj, msg, using):
