@@ -252,7 +252,11 @@ class Collection(APIMixin):
             else:
                 field=model._meta.get_field(field_name)
                 model=field.related_model
-                reverse_name.append(field.related_query_name())
+                if isinstance(field, (models.ManyToManyField,models.ForeignKey,models.OneToOneField)):
+                    related_name=field.related_query_name()
+                elif isinstance(field,(models.ManyToManyRel,models.ManyToOneRel,models.OneToOneRel)):
+                    related_name=field.field.name
+                reverse_name.append(related_name)
         return "__".join(reversed(reverse_name))
 
     @property
