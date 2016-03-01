@@ -70,7 +70,7 @@ class PostgresGreenlet(gevent.Greenlet):
         logging.getLogger('dddp').info('=> Started PostgresGreenlet.')
 
         cur = conn.cursor()
-        cur.execute('LISTEN "ddp";')
+        cur.execute('LISTEN "ddp-%s";' % os.getpid())
         while not self._stop_event.is_set():
             try:
                 self.select_greenlet = gevent.spawn(

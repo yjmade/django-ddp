@@ -6,7 +6,7 @@ import collections
 from copy import deepcopy
 import inspect
 import uuid
-
+import itertools
 # requirements
 from django.conf import settings
 import django.contrib.postgres.fields
@@ -962,6 +962,8 @@ class DDP(APIMixin):
         except AttributeError:
             my_connection_id = None
         meteor_ids = {}
+        all_connection_ids=set(itertools.chain(*old_col_connection_ids.values())) | set(itertools.chain(*new_col_connection_ids.values()))
+        connection_ids_pids=dict(Connection.objects.filter(pk__in=all_connection_ids).values_list("pk","pid"))
         for col in set(old_col_connection_ids).union(new_col_connection_ids):
             old_connection_ids = old_col_connection_ids[col]
             new_connection_ids = new_col_connection_ids[col]
@@ -972,39 +974,44 @@ class DDP(APIMixin):
             ):
                 if not connection_ids:
                     continue  # nobody subscribed
-                payload = col.obj_change_as_msg(obj, msg, meteor_ids)
-                payload['_connection_ids'] = sorted(connection_ids)
-                if my_connection_id is not None:
-                    payload['_sender'] = my_connection_id
-                    if my_connection_id in connection_ids:
-                        # msg must go to connection that initiated the change
-                        payload['_tx_id'] = this.ws.get_tx_id()
-                # header is sent in every payload
-                header = {
-                    'uuid': uuid.uuid1().int,  # UUID1 should be unique
-                    'seq': 1,  # increments for each 8KB chunk
-                    'fin': 0,  # zero if more chunks expected, 1 if last chunk.
-                }
-                data = ejson.dumps(payload)
-                cursor = connections[using].cursor()
-                while data:
-                    hdr = ejson.dumps(header)
-                    # use all available payload space for chunk
-                    max_len = 8000 - len(hdr) - 100
-                    # take a chunk from data
-                    chunk, data = data[:max_len], data[max_len:]
-                    if not data:
-                        # last chunk, set fin=1.
-                        header['fin'] = 1
+                pids_connection_ids=collections.defaultdict(list)
+                for connection_id in connection_ids:
+                    pids_connection_ids[connection_ids_pids[connection_id]].append(connection_id)
+
+                for pid,connection_ids in pids_connection_ids.iteritems():
+                    payload = col.obj_change_as_msg(obj, msg, meteor_ids)
+                    payload['_connection_ids'] = sorted(connection_ids)
+                    if my_connection_id is not None:
+                        payload['_sender'] = my_connection_id
+                        if my_connection_id in connection_ids:
+                            # msg must go to connection that initiated the change
+                            payload['_tx_id'] = this.ws.get_tx_id()
+                    # header is sent in every payload
+                    header = {
+                        'uuid': uuid.uuid1().int,  # UUID1 should be unique
+                        'seq': 1,  # increments for each 8KB chunk
+                        'fin': 0,  # zero if more chunks expected, 1 if last chunk.
+                    }
+                    data = ejson.dumps(payload)
+                    cursor = connections[using].cursor()
+                    while data:
                         hdr = ejson.dumps(header)
-                    # print('NOTIFY: %s' % hdr)
-                    cursor.execute(
-                        'NOTIFY "ddp", %s',
-                        [
-                            '%s|%s' % (hdr, chunk),  # pipe separates hdr|chunk.
-                        ],
-                    )
-                    header['seq'] += 1  # increment sequence.
+                        # use all available payload space for chunk
+                        max_len = 8000 - len(hdr) - 100
+                        # take a chunk from data
+                        chunk, data = data[:max_len], data[max_len:]
+                        if not data:
+                            # last chunk, set fin=1.
+                            header['fin'] = 1
+                            hdr = ejson.dumps(header)
+                        # print('NOTIFY: %s' % hdr)
+                        cursor.execute(
+                            'NOTIFY "ddp-%s", %%s' % pid,
+                            [
+                                '%s|%s' % (hdr, chunk),  # pipe separates hdr|chunk.
+                            ],
+                        )
+                        header['seq'] += 1  # increment sequence.
 
     def login_required(self,func):
         @wraps(func)

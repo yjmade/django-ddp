@@ -315,6 +315,7 @@ class Connection(models.Model, object):
     server_addr = models.CharField(max_length=255)
     remote_addr = models.CharField(max_length=255)
     version = models.CharField(max_length=255)
+    pid=models.IntegerField(db_index=True,null=True)
 
     def __str__(self):
         """Text representation of subscription."""

@@ -7,6 +7,7 @@ import collections
 import inspect
 import itertools
 import sys
+import os
 import traceback
 
 from six.moves import range as irange
@@ -220,7 +221,9 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
     def ddp_frames_from_message(self, message):
         """Yield DDP messages from a raw WebSocket message."""
         # parse message set
-        print("receive %s-%s: %s" % (this.request.META["REMOTE_ADDR"],this.user,message))
+        import thread
+        import os
+        print(os.getpid(),id(gevent.getcurrent()),"receive %s-%s: %s" % (this.request.META["REMOTE_ADDR"],this.user,message))
 
         try:
             msgs = ejson.loads(message)
@@ -437,6 +440,7 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
                 ),
                 remote_addr=self.remote_addr,
                 version=version,
+                pid=os.getpid()
             )
             self.pgworker.connections[self.connection.pk] = self
             atexit.register(self.on_close, 'Shutting down.')
