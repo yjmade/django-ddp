@@ -258,7 +258,7 @@ class Auth(APIMixin):
     def update_subs(new_user_id):
         """Update subs to send added/removed for collections with user_rel."""
         for sub in Subscription.objects.filter(connection=this.ws.connection):
-            params = sub.params_ejson
+            params = sub.params
             pub = API.get_pub_by_name(sub.publication)
 
             # calculate the querysets prior to update
