@@ -339,7 +339,7 @@ class Auth(APIMixin):
 
         engine = import_module(settings.SESSION_ENGINE)
         SessionStore = engine.SessionStore
-        this._session = SessionStore(session_id)
+        this.session = SessionStore(session_id)
         user=get_user(this)
         if isinstance(user, auth_models.AnonymousUser):
             self.auth_failed(session_id=session_id)
