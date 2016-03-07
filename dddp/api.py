@@ -286,10 +286,12 @@ class Collection(APIMixin):
                     # user_rel spans a join - ensure efficient SQL is generated
                     # such as `...WHERE foo_id IN (SELECT foo.id FROM ...)`
                     # rather than creating an explosion of INNER JOINS.
+                    to_field_name=field.to_fields[0] if isinstance(field, models.ForeignKey) else "pk"
+                    to_field_name=to_field_name or "pk"
                     filter_obj = Q(**{
                         '%s__in' % name: field.related_model.objects.filter(
-                            **{rel or 'pk': user}
-                        ).values('pk'),
+                            **{rel or to_field_name: user}
+                        ).values(to_field_name),
                     })
                 else:
                     # user rel is a local field -> no joins to avoid.
@@ -465,7 +467,7 @@ class Collection(APIMixin):
             if rel:
                 # use field value which should set by select_related()
                 to_field_name=field.to_fields[0]
-                if to_field_name=="aid" or isinstance(field.related_model._meta.get_field(to_field_name),AleaIdField):
+                if to_field_name and (to_field_name=="aid" or isinstance(field.related_model._meta.get_field(to_field_name),AleaIdField)):
                     fields[field.column]=getattr(obj, field.attname)
                 else:
                     fields[field.column] = get_meteor_id(
