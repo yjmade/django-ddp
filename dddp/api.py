@@ -464,10 +464,14 @@ class Collection(APIMixin):
             rel = getattr(field, 'rel', None)
             if rel:
                 # use field value which should set by select_related()
-                fields[field.column] = get_meteor_id(
-                    field.related_model,
-                    getattr(obj, field.attname),
-                )
+                to_field_name=field.to_fields[0]
+                if to_field_name=="aid" or isinstance(field.related_model._meta.get_field(to_field_name),AleaIdField):
+                    fields[field.column]=getattr(obj, field.attname)
+                else:
+                    fields[field.column] = get_meteor_id(
+                        field.related_model,
+                        getattr(obj, field.attname),
+                    )
                 fields.pop(field.name)
             elif isinstance(field, django.contrib.postgres.fields.ArrayField):
                 fields[field.name] = field.to_python(fields.pop(field.name))

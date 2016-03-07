@@ -285,11 +285,12 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
                 if isinstance(err, MeteorError):
                     error = err.as_dict()
                 else:
-                    tp,value,tb=sys.exc_info()
-                    six.reraise(tp, value, tb)
+                    if getattr(settings,"HALT_WHEN_DDP_ERROR",False):
+                        tp,value,tb=sys.exc_info()
+                        six.reraise(tp, value, tb)
                     error = {
                         'error': 500,
-                        'reason': 'Internal server error',
+                        'reason': '%s' % err,
                     }
                 if kwargs['msg'] == 'error':
                     kwargs.update(error)
