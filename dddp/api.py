@@ -231,6 +231,21 @@ class Collection(APIMixin):
     queryset = property(get_queryset)
 
     @cached_property
+    def aid_field(self):
+        meta=self.model._meta
+        if isinstance(meta.pk, AleaIdField):
+            return meta.pk
+        alea_unique_fields = [
+            field
+            for field in meta.local_fields
+            if isinstance(field, AleaIdField) and field.unique
+        ]
+        if len(alea_unique_fields) == 1:
+            # found an AleaIdField with unique=True, assume it's got the value.
+            return alea_unique_fields[0]
+        return None
+
+    @cached_property
     def user_rels(self):
         if not self.user_rel:
             return None
@@ -282,20 +297,24 @@ class Collection(APIMixin):
                 name, rel = (user_rel.split('__', 1) + [None])[:2]
                 field = meta.pk if name == 'pk' else meta.get_field(name)
                 # generate `filter_obj` (instance of django.db.models.Q)
-                if field.related_model is not None:
-                    # user_rel spans a join - ensure efficient SQL is generated
-                    # such as `...WHERE foo_id IN (SELECT foo.id FROM ...)`
-                    # rather than creating an explosion of INNER JOINS.
-                    to_field_name=field.to_fields[0] if isinstance(field, models.ForeignKey) else "pk"
-                    to_field_name=to_field_name or "pk"
-                    filter_obj = Q(**{
-                        '%s__in' % name: field.related_model.objects.filter(
-                            **{rel or to_field_name: user}
-                        ).values(to_field_name),
-                    })
-                else:
-                    # user rel is a local field -> no joins to avoid.
-                    filter_obj = Q(**{str(user_rel): user})
+                # if field.related_model is not None:
+                # user_rel spans a join - ensure efficient SQL is generated
+                # such as `...WHERE foo_id IN (SELECT foo.id FROM ...)`
+                # rather than creating an explosion of INNER JOINS.
+                to_field_name=field.to_fields[0] if isinstance(field, models.ForeignKey) else "pk"
+                to_field_name=to_field_name or "pk"
+                # import ipdb; ipdb.set_trace()
+                filter_obj = Q(**({
+                    '%s__in' % name: field.related_model.objects.filter(
+                        **({rel: user})
+                    ).values(to_field_name)
+                } if rel else {
+                    name:getattr(user, to_field_name)
+                }))
+                # else:
+                #     # user rel is a local field -> no joins to avoid.
+                #     import ipdb; ipdb.set_trace()
+                #     filter_obj = Q(**{str(user_rel): user})
                 # merge `filter_obj` into `user_filter`
                 if user_filter is None:
                     user_filter = filter_obj
@@ -487,9 +506,15 @@ class Collection(APIMixin):
                 # This will be sent as the `id`, don't send it in `fields`.
                 fields.pop(field.name)
         for field in meta.local_many_to_many:
-            fields['%s_ids' % field.name] = get_meteor_ids(
-                field.rel.to, getattr(obj,field.name).values_list("pk",flat=True),
-            ).values()
+            qs=getattr(obj,field.name).all()
+            try:
+                aid_field=API._model_aid[qs.model]
+                data_=list(qs.values_list(aid_field.name,flat=True))
+            except KeyError:
+                data_ = get_meteor_ids(
+                    field.rel.to, qs.values_list("pk",flat=True),
+                ).values()
+            fields['%s_ids' % field.name]=data_
         return data
 
     def obj_change_as_msg(self, obj, msg, meteor_ids=None):
@@ -596,6 +621,7 @@ class DDP(APIMixin):
         """DDP API init."""
         self._registry = {}
         self._model_cols=collections.defaultdict(list)
+        self._model_aid={}
         self._ddp_subscribers = {}
 
     def get_collection(self, model):
@@ -645,7 +671,7 @@ class DDP(APIMixin):
             (
                 col,
                 col.objects_for_user(
-                    user=sub.user_id,
+                    user=sub.user,
                     qs=qs,
                     *args, **kwargs
                 ),
@@ -799,6 +825,8 @@ class DDP(APIMixin):
             self.clear_api_path_map_cache()
             if isinstance(api, Collection):
                 self._model_cols[api.model].append(api)
+                if api.aid_field:
+                    self._model_aid[api.model]=api.aid_field
 
     @api_endpoint
     def schema(self):

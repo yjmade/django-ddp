@@ -20,6 +20,7 @@ from django_pgjsonb.fields import JSONField
 
 
 def get_meteor_id(obj_or_model, obj_pk=None):
+    from .api import API
     """Return an Alea ID for the given object."""
     if obj_or_model is None:
         return None
@@ -40,20 +41,17 @@ def get_meteor_id(obj_or_model, obj_pk=None):
     if isinstance(meta.pk, AleaIdField):
         return obj_pk
 
-    alea_unique_fields = [
-        field
-        for field in meta.local_fields
-        if isinstance(field, AleaIdField) and field.unique
-    ]
-    if len(alea_unique_fields) == 1:
-        # found an AleaIdField with unique=True, assume it's got the value.
-        aid = alea_unique_fields[0].attname
+    try:
+        aid_field=API._model_aid[model]
+    except KeyError:
+        pass
+    else:
         if isinstance(obj_or_model, model):
-            val = getattr(obj_or_model, aid)
+            val = getattr(obj_or_model, aid_field.name)
         elif obj_pk is None:
             val = None
         else:
-            val = model.objects.values_list(aid, flat=True).get(
+            val = model.objects.values_list(aid_field.name, flat=True).get(
                 pk=obj_pk,
             )
         if val:
@@ -89,6 +87,8 @@ get_meteor_id.short_description = 'DDP ID'  # nice title for admin list_display
 def get_meteor_ids(model, object_ids):
     """Return Alea ID mapping for all given ids of specified model."""
     # Django model._meta is now public API -> pylint: disable=W0212
+    from .api import API
+
     meta = model._meta
     result = collections.OrderedDict(
         (str(obj_pk), None)
@@ -100,17 +100,12 @@ def get_meteor_ids(model, object_ids):
         return collections.OrderedDict(
             (obj_pk, obj_pk) for obj_pk in object_ids
         )
-    alea_unique_fields = [
-        field
-        for field in meta.local_fields
-        if isinstance(field, AleaIdField) and field.unique and not field.null
-    ]
-    if len(alea_unique_fields) == 1:
-        aid = alea_unique_fields[0].name
+    try:
+        aid_field=API._model_aid[model]
         query = model.objects.filter(
             pk__in=object_ids,
-        ).values_list('pk', aid)
-    else:
+        ).values_list('pk', aid_field.name)
+    except KeyError:
         content_type = ContentType.objects.get_for_model(model)
         query = ObjectMapping.objects.filter(
             content_type=content_type,
