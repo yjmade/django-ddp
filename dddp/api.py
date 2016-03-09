@@ -692,7 +692,7 @@ class DDP(APIMixin):
                     continue
                 to_send[col] = to_send[col].exclude(
                     pk__in=col.objects_for_user(
-                        user=other.user_id,
+                        user=other.user,
                         qs=qs,
                         *args, **kwargs
                     ).values('pk'),
