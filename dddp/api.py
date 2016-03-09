@@ -874,13 +874,14 @@ class DDP(APIMixin):
             return  # never send migration or DDP internal models
         obj = kwargs['instance']
         using = kwargs['using']
-        self._ddp_subscribers.setdefault(
-            using, {},
-        ).setdefault(
-            sender, {},
-        )[obj.pk] = self.valid_subscribers(
-            model=sender, obj=obj, using=using,
-        )
+        if obj.pk:
+            self._ddp_subscribers.setdefault(
+                using, {},
+            ).setdefault(
+                sender, {},
+            )[obj.pk] = self.valid_subscribers(
+                model=sender, obj=obj, using=using,
+            )
 
     def on_m2m_changed(self, sender, **kwargs):
         """M2M-changed signal handler."""
@@ -971,7 +972,7 @@ class DDP(APIMixin):
                 if qs.model is not model:
                     continue  # wrong model on queryset
                 # check if obj is included in this subscription
-                if not qs.filter(pk=obj.pk).exists():
+                if qs.query.where and not qs.filter(pk=obj.pk).exists():
                     continue  # subscription doesn't include this obj
 
                 col_connection_ids[col].add(sub.connection_id)
