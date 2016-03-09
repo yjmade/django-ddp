@@ -656,6 +656,8 @@ class DDP(APIMixin):
         """Return objects that are only visible through given subscription."""
         if params is None:
             params = sub.params
+
+        params[0].running_from="do_sub"
         if pub is None:
             pub = self.get_pub_by_name(sub.publication)
         queries = collections.OrderedDict(

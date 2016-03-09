@@ -341,7 +341,11 @@ class Subscription(models.Model, object):
             ['connection', 'sub_id'],
         ]
 
-    Env=collections.namedtuple("Env", ["user","sub_time"])
+    class Env(object):
+        def __init__(self,user,sub_time,running_from):
+            self.user=user
+            self.sub_time=sub_time
+            self.running_from=running_from
 
     def __str__(self):
         """Text representation of subscription."""
@@ -358,7 +362,8 @@ class Subscription(models.Model, object):
         params = self.params_ejson or []
         params.insert(0,self.Env(
             self.user,
-            self.created_time
+            self.created_time,
+            "subed"
         ))
         return params
 
