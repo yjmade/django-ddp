@@ -843,7 +843,6 @@ class DDP(APIMixin):
     def ready(self):
         """Initialisation for django-ddp (setup lookups and signal handlers)."""
         for model in self._model_cols:
-            print("reg",model)
             # set/unset self._in_migration
             signals.pre_migrate.connect(self.on_pre_migrate,sender=model)
             signals.post_migrate.connect(self.on_post_migrate,sender=model)
