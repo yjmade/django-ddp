@@ -842,17 +842,19 @@ class DDP(APIMixin):
 
     def ready(self):
         """Initialisation for django-ddp (setup lookups and signal handlers)."""
-        # set/unset self._in_migration
-        signals.pre_migrate.connect(self.on_pre_migrate)
-        signals.post_migrate.connect(self.on_post_migrate)
-        # update self._ddp_subscribers before changes made
-        signals.pre_delete.connect(self.on_pre_change)
-        signals.pre_save.connect(self.on_pre_change)
-        # emit change message after changes made
-        signals.post_save.connect(self.on_post_save)
-        signals.post_delete.connect(self.on_post_delete)
-        signals.m2m_changed.connect(self.on_m2m_changed)
-        # call ready on each registered API endpoint
+        for model in self._model_cols:
+            print("reg",model)
+            # set/unset self._in_migration
+            signals.pre_migrate.connect(self.on_pre_migrate,sender=model)
+            signals.post_migrate.connect(self.on_post_migrate,sender=model)
+            # update self._ddp_subscribers before changes made
+            signals.pre_delete.connect(self.on_pre_change,sender=model)
+            signals.pre_save.connect(self.on_pre_change,sender=model)
+            # emit change message after changes made
+            signals.post_save.connect(self.on_post_save,sender=model)
+            signals.post_delete.connect(self.on_post_delete,sender=model)
+            signals.m2m_changed.connect(self.on_m2m_changed,sender=model)
+            # call ready on each registered API endpoint
         for api_provider in self.api_providers:
             api_provider.ready()
 
