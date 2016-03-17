@@ -536,7 +536,7 @@ class Collection(APIMixin):
                 else:
                     field_name="pk"
                 data_=list(qs.values_list(field_name,flat=True))
-                if data_ and isinstance(data[0],uuid.UUID):
+                if data_ and isinstance(data_[0],uuid.UUID):
                     data_=[str(item) for item in data_]
             except KeyError:
                 data_ = get_meteor_ids(
@@ -735,7 +735,6 @@ class DDP(APIMixin):
         """Create subscription, send matched objects that haven't been sent."""
         return self.do_sub(id_, name, False, *params)
 
-    @transaction.atomic
     def do_sub(self, id_, name, silent, *params):
         """Subscribe the current thread to the specified publication."""
         try:
