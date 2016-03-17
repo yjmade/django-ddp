@@ -758,14 +758,16 @@ class DDP(APIMixin):
                 this.send({'msg': 'ready', 'subs': [id_]})
             return
         # re-read from DB so we can get transaction ID (xmin)
-        sub = Subscription.objects.extra(**XMIN).get(pk=sub.pk)
+        sub = Subscription.objects.select_related("user").extra(**XMIN).get(pk=sub.pk)
+        to_create_sub_cols=[]
         for col, qs in self.sub_unique_objects(
                 sub, sub.params, pub, xmin__lte=sub.xmin,
         ):
-            sub.collections.create(
+            to_create_sub_cols.append(SubscriptionCollection(
+                subscription=sub,
                 model_name=model_name(qs.model),
                 collection_name=col.name,
-            )
+            ))
             if isinstance(col.model._meta.pk, AleaIdField):
                 meteor_ids = None
             elif len([
@@ -788,6 +790,8 @@ class DDP(APIMixin):
             for obj in qs.select_related():
                 payload = col.obj_change_as_msg(obj, ADDED, meteor_ids)
                 this.send(payload)
+        if to_create_sub_cols:
+            SubscriptionCollection.objects.bulk_create(to_create_sub_cols)
         if not silent:
             this.send({'msg': 'ready', 'subs': [id_]})
 
