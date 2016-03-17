@@ -448,7 +448,7 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
                 pid=os.getpid()
             )
             self.pgworker.connections[self.connection.pk] = self
-            atexit.register(self.on_close, 'Shutting down.')
+            # atexit.register(self.on_close, 'Shutting down.')
             self.reply('connected', session=self.connection.connection_id)
             self.login_with_cookie()
     recv_connect.err = 'Malformed connect'
@@ -482,3 +482,11 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
         self.api.method(method, params, id_)
         self.reply('updated', methods=[id_])
     recv_method.err = 'Malformed method invocation'
+
+    @classmethod
+    def cleanup_connections(cls):
+        from dddp.models import Connection
+        Connection.objects.filter(pid=os.getpid()).delete()
+
+
+atexit.register(DDPWebSocketApplication.cleanup_connections)
