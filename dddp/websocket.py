@@ -9,6 +9,7 @@ import itertools
 import sys
 import os
 import traceback
+from time import time
 
 from six.moves import range as irange
 import six
@@ -207,6 +208,9 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
         """Process a message received from remote."""
         if self.ws.closed:
             return None
+        this._task_id=alea.Alea().random_string(17, alea.UNMISTAKABLE)
+        print("receive %s %s-%s: %s" % (this._task_id,this.request.META["REMOTE_ADDR"],this.user,message))
+        start=time()
         try:
             safe_call(self.logger.debug, '< %s %r', self, message)
 
@@ -217,13 +221,13 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
                 signals.request_finished.send(sender=self.__class__)
         except geventwebsocket.WebSocketError:
             self.ws.close()
+        finally:
+            print("finish %s [%.2fms]" % (this._task_id,(time()-start)*1000))
+            del this._task_id
 
     def ddp_frames_from_message(self, message):
         """Yield DDP messages from a raw WebSocket message."""
         # parse message set
-        import thread
-        import os
-        print(os.getpid(),id(gevent.getcurrent()),"receive %s-%s: %s" % (this.request.META["REMOTE_ADDR"],this.user,message))
 
         try:
             msgs = ejson.loads(message)
@@ -393,9 +397,9 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
             # send message
             safe_call(self.logger.debug, '> %s %r', self, data)
             try:
-                print("send %s-%s: %s" % (this.request.META["REMOTE_ADDR"],this.user,data))
+                print("send %s %s-%s: %s" % (getattr(this,"_task_id",None),this.request.META["REMOTE_ADDR"],this.user,data))
             except:
-                print("send",data)
+                print("send",getattr(this,"_task_id",None),data)
             try:
                 self.ws.send(data)
             except geventwebsocket.WebSocketError:

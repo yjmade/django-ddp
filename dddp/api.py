@@ -214,6 +214,21 @@ class Collection(APIMixin):
     order_by = None
     user_rel = None
     always_allow_superusers = True
+    sync_fields=None
+    no_sync_fields=None
+
+    @cached_property
+    def _to_sync_fields(self):
+        if self.sync_fields:
+            return set(self.sync_fields)
+
+        no_sync_fields=self.no_sync_fields or []
+
+        return {
+            field.name
+            for field in itertools.chain(self.model._meta.local_fields,self.model._meta.local_many_to_many)
+            if field.name not in no_sync_fields
+        }
 
     def get_queryset(self, base_qs=None):
         """Return a filtered, ordered queryset for this collection."""
@@ -460,8 +475,9 @@ class Collection(APIMixin):
             in self.field_schema()
         }
 
-    def serialize(self, obj, meteor_ids):
+    def serialize(self, obj, meteor_ids,no_sync_fields=None):
         """Generate a DDP msg for obj with specified msg type."""
+        no_sync_fields=no_sync_fields or []
         # check for F expressions
         exps = [
             name for name, val in vars(obj).items()
@@ -482,17 +498,22 @@ class Collection(APIMixin):
         # Django supports model._meta -> pylint: disable=W0212
         meta = self.model._meta
         for field in meta.local_fields:
+            if field.name not in self._to_sync_fields or field.name in no_sync_fields:
+                continue
             rel = getattr(field, 'rel', None)
             if rel:
-                # use field value which should set by select_related()
-                to_field_name=field.to_fields[0]
-                if to_field_name and (to_field_name=="aid" or isinstance(field.related_model._meta.get_field(to_field_name),AleaIdField)):
-                    fields[field.column]=getattr(obj, field.attname)
+                if rel.model in API._model_cols:
+                    # use field value which should set by select_related()
+                    to_field_name=field.to_fields[0]
+                    if to_field_name and (to_field_name=="aid" or isinstance(field.related_model._meta.get_field(to_field_name),AleaIdField)):
+                        fields[field.column]=getattr(obj, field.attname)
+                    else:
+                        fields[field.column] = get_meteor_id(
+                            field.related_model,
+                            getattr(obj, field.attname),
+                        )
                 else:
-                    fields[field.column] = get_meteor_id(
-                        field.related_model,
-                        getattr(obj, field.attname),
-                    )
+                    fields[field.column]=getattr(obj,field.attname)
                 fields.pop(field.name)
             elif isinstance(field, django.contrib.postgres.fields.ArrayField):
                 fields[field.name] = field.to_python(fields.pop(field.name))
@@ -506,10 +527,17 @@ class Collection(APIMixin):
                 # This will be sent as the `id`, don't send it in `fields`.
                 fields.pop(field.name)
         for field in meta.local_many_to_many:
+            if field.name not in self._to_sync_fields or field.name in no_sync_fields:
+                continue
             qs=getattr(obj,field.name).all()
             try:
-                aid_field=API._model_aid[qs.model]
-                data_=list(qs.values_list(aid_field.name,flat=True))
+                if field.rel.model in API._model_cols:
+                    field_name=API._model_aid[qs.model].name
+                else:
+                    field_name="pk"
+                data_=list(qs.values_list(field_name,flat=True))
+                if data_ and isinstance(data[0],uuid.UUID):
+                    data_=[str(item) for item in data_]
             except KeyError:
                 data_ = get_meteor_ids(
                     field.rel.to, qs.values_list("pk",flat=True),
@@ -1002,6 +1030,7 @@ class DDP(APIMixin):
         meteor_ids = {}
         all_connection_ids=set(itertools.chain(*old_col_connection_ids.values())) | set(itertools.chain(*new_col_connection_ids.values()))
         connection_ids_pids=dict(Connection.objects.filter(pk__in=all_connection_ids).values_list("pk","pid"))
+        cursor = connections[using].cursor()
         for col in set(old_col_connection_ids).union(new_col_connection_ids):
             old_connection_ids = old_col_connection_ids[col]
             new_connection_ids = new_col_connection_ids[col]
@@ -1031,7 +1060,6 @@ class DDP(APIMixin):
                         'fin': 0,  # zero if more chunks expected, 1 if last chunk.
                     }
                     data = ejson.dumps(payload)
-                    cursor = connections[using].cursor()
                     while data:
                         hdr = ejson.dumps(header)
                         # use all available payload space for chunk
@@ -1059,5 +1087,49 @@ class DDP(APIMixin):
             return func(*args,**kwargs)
         return wrap
 
+    def send_to_users(self,users,msgs,using="default"):
+        cursor = connections[using].cursor()
+
+        try:
+            my_connection_id = this.ws.connection.pk
+        except AttributeError:
+            my_connection_id = None
+
+        connection_ids_pids=collections.defaultdict(list)
+        for con_id,pid in Subscription.objects.filter(user__in=users,publication="LoggedInUser").values_list("connection","connection__pid"):
+            connection_ids_pids[pid].append(con_id)
+
+        for msg in msgs:
+            for pid,connection_ids in connection_ids_pids.items():
+                header = {
+                    'uuid': uuid.uuid1().int,  # UUID1 should be unique
+                    'seq': 1,  # increments for each 8KB chunk
+                    'fin': 0,  # zero if more chunks expected, 1 if last chunk.
+                }
+                payload=dict(msg,_connection_ids=sorted(connection_ids))
+                if my_connection_id is not None:
+                    payload['_sender'] = my_connection_id
+                    if my_connection_id in connection_ids:
+                        # msg must go to connection that initiated the change
+                        payload['_tx_id'] = this.ws.get_tx_id()
+                data = ejson.dumps(payload)
+                while data:
+                    hdr = ejson.dumps(header)
+                    # use all available payload space for chunk
+                    max_len = 8000 - len(hdr) - 100
+                    # take a chunk from data
+                    chunk, data = data[:max_len], data[max_len:]
+                    if not data:
+                        # last chunk, set fin=1.
+                        header['fin'] = 1
+                        hdr = ejson.dumps(header)
+                    # print('NOTIFY: %s' % hdr)
+                    cursor.execute(
+                        'NOTIFY "ddp-%s", %%s' % pid,
+                        [
+                            '%s|%s' % (hdr, chunk),  # pipe separates hdr|chunk.
+                        ],
+                    )
+                    header['seq'] += 1  # increment sequence.
 
 API = DDP()

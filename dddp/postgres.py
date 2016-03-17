@@ -107,7 +107,7 @@ class PostgresGreenlet(gevent.Greenlet):
                         "Got NOTIFY (pid=%d, payload=%r)",
                         notify.pid, notify.payload,
                     )
-                    print("get notify",notify)
+                    print(notify)
                     # read the header and check seq/fin.
                     hdr, chunk = notify.payload.split('|', 1)
                     # print('RECEIVE: %s' % hdr)
