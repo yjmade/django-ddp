@@ -209,7 +209,6 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
         if self.ws.closed:
             return None
         this._task_id=alea.Alea().random_string(17, alea.UNMISTAKABLE)
-        print("receive %s %s-%s: %s" % (this._task_id,this.request.META["REMOTE_ADDR"],this.user,message))
         start=time()
         try:
             safe_call(self.logger.debug, '< %s %r', self, message)
@@ -231,6 +230,7 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
 
         try:
             msgs = ejson.loads(message)
+            print("receive %s %s-%s: %s" % (this._task_id,this.request.META["REMOTE_ADDR"],this.user,msgs))
         except ValueError:
             self.reply(
                 'error', error=400, reason='Data is not valid EJSON',
