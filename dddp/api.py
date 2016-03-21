@@ -676,6 +676,8 @@ class DDP(APIMixin):
         if hasattr(qs, 'model'):
             return (qs, self.get_collection(qs.model))
         elif isinstance(qs, (list, tuple)):
+            if len(qs)==3:
+                qs[0]._item_checker=qs[2]
             return (qs[0], self.get_col_by_name(qs[1]))
         else:
             raise TypeError('Invalid query spec: %r' % qs)
@@ -1006,8 +1008,14 @@ class DDP(APIMixin):
                 if qs.model is not model:
                     continue  # wrong model on queryset
                 # check if obj is included in this subscription
-                if qs.query.where and not qs.filter(pk=obj.pk).exists():
-                    continue  # subscription doesn't include this obj
+
+                # subscription doesn't include this obj
+                if qs.query.where:
+                    if hasattr(qs, "_item_checker"):
+                        if not qs._item_checker(obj):
+                            continue
+                    elif not qs.filter(pk=obj.pk).exists():
+                        continue
 
                 col_connection_ids[col].add(sub.connection_id)
 
