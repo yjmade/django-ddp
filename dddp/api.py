@@ -499,6 +499,8 @@ class Collection(APIMixin):
         meta = self.model._meta
         for field in meta.local_fields:
             if field.name not in self._to_sync_fields or field.name in no_sync_fields:
+                fields.pop(field.name,None)
+                fields.pop(field.attname,None)
                 continue
             rel = getattr(field, 'rel', None)
             if rel:
