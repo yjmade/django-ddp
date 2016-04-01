@@ -24,6 +24,7 @@ class DjangoDDPConfig(AppConfig):
             if engine not in [
                 'django.db.backends.postgresql',
                 'django.db.backends.postgresql_psycopg2',
+                'django.contrib.gis.db.backends.postgis'
             ]:
                 warnings.warn(
                     'Database %r uses unsupported %r engine.' % (

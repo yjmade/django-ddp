@@ -15,9 +15,12 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.utils.encoding import python_2_unicode_compatible
 import ejson
 from dddp import meteor_random_id
+from django.core.cache import cache
+from django_pgjsonb.fields import JSONField
 
 
 def get_meteor_id(obj_or_model, obj_pk=None):
+    from .api import API
     """Return an Alea ID for the given object."""
     if obj_or_model is None:
         return None
@@ -31,25 +34,24 @@ def get_meteor_id(obj_or_model, obj_pk=None):
     # try getting value of AleaIdField straight from instance if possible
     if isinstance(obj_or_model, model):
         # obj_or_model is an instance, not a model.
-        if isinstance(meta.pk, AleaIdField):
-            return obj_or_model.pk
         if obj_pk is None:
             # fall back to primary key, but coerce as string type for lookup.
             obj_pk = str(obj_or_model.pk)
-    alea_unique_fields = [
-        field
-        for field in meta.local_fields
-        if isinstance(field, AleaIdField) and field.unique
-    ]
-    if len(alea_unique_fields) == 1:
-        # found an AleaIdField with unique=True, assume it's got the value.
-        aid = alea_unique_fields[0].attname
+
+    if isinstance(meta.pk, AleaIdField):
+        return obj_pk
+
+    try:
+        aid_field=API._model_aid[model]
+    except KeyError:
+        pass
+    else:
         if isinstance(obj_or_model, model):
-            val = getattr(obj_or_model, aid)
+            val = getattr(obj_or_model, aid_field.name)
         elif obj_pk is None:
             val = None
         else:
-            val = model.objects.values_list(aid, flat=True).get(
+            val = model.objects.values_list(aid_field.name, flat=True).get(
                 pk=obj_pk,
             )
         if val:
@@ -61,25 +63,32 @@ def get_meteor_id(obj_or_model, obj_pk=None):
 
     # fallback to using AleaIdField from ObjectMapping model.
     content_type = ContentType.objects.get_for_model(model)
-    try:
-        return ObjectMapping.objects.values_list(
-            'meteor_id', flat=True,
-        ).get(
-            content_type=content_type,
-            object_id=obj_pk,
-        )
-    except ObjectDoesNotExist:
-        return ObjectMapping.objects.create(
-            content_type=content_type,
-            object_id=obj_pk,
-            meteor_id=meteor_random_id('/collection/%s' % meta),
-        ).meteor_id
+    cache_name="DDP_OBJECTMAP_%s_%s" % (content_type.pk,obj_pk)
+    meteor_id=cache.get(cache_name)
+    if not meteor_id:
+        try:
+            meteor_id = ObjectMapping.objects.values_list(
+                'meteor_id', flat=True,
+            ).get(
+                content_type=content_type,
+                object_id=obj_pk,
+            )
+        except ObjectDoesNotExist:
+            meteor_id = ObjectMapping.objects.create(
+                content_type=content_type,
+                object_id=obj_pk,
+                meteor_id=meteor_random_id('/collection/%s' % meta),
+            ).meteor_id
+        cache.set(cache_name,meteor_id)
+    return meteor_id
 get_meteor_id.short_description = 'DDP ID'  # nice title for admin list_display
 
 
 def get_meteor_ids(model, object_ids):
     """Return Alea ID mapping for all given ids of specified model."""
     # Django model._meta is now public API -> pylint: disable=W0212
+    from .api import API
+
     meta = model._meta
     result = collections.OrderedDict(
         (str(obj_pk), None)
@@ -91,17 +100,12 @@ def get_meteor_ids(model, object_ids):
         return collections.OrderedDict(
             (obj_pk, obj_pk) for obj_pk in object_ids
         )
-    alea_unique_fields = [
-        field
-        for field in meta.local_fields
-        if isinstance(field, AleaIdField) and field.unique and not field.null
-    ]
-    if len(alea_unique_fields) == 1:
-        aid = alea_unique_fields[0].name
+    try:
+        aid_field=API._model_aid[model]
         query = model.objects.filter(
             pk__in=object_ids,
-        ).values_list('pk', aid)
-    else:
+        ).values_list('pk', aid_field.name)
+    except KeyError:
         content_type = ContentType.objects.get_for_model(model)
         query = ObjectMapping.objects.filter(
             content_type=content_type,
@@ -177,8 +181,8 @@ def get_object_ids(model, meteor_ids):
     else:
         content_type = ContentType.objects.get_for_model(model)
         query = ObjectMapping.objects.filter(
-                content_type=content_type,
-                meteor_id__in=meteor_ids,
+            content_type=content_type,
+            meteor_id__in=meteor_ids,
         ).values_list('meteor_id', 'object_id')
     for meteor_id, object_id in query:
         result[meteor_id] = object_id
@@ -306,6 +310,7 @@ class Connection(models.Model, object):
     server_addr = models.CharField(max_length=255)
     remote_addr = models.CharField(max_length=255)
     version = models.CharField(max_length=255)
+    pid=models.IntegerField(db_index=True,null=True)
 
     def __str__(self):
         """Text representation of subscription."""
@@ -325,7 +330,8 @@ class Subscription(models.Model, object):
     sub_id = models.CharField(max_length=17)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, blank=True, null=True)
     publication = models.CharField(max_length=255)
-    params_ejson = models.TextField(default='{}')
+    params_ejson = JSONField(default={},encode_kwargs={"cls":ejson.EJSONEncoder},decode_kwargs={"cls":ejson.EJSONDecoder})
+    created_time=models.DateTimeField(auto_now_add=True)
 
     class Meta(object):
 
@@ -334,6 +340,12 @@ class Subscription(models.Model, object):
         unique_together = [
             ['connection', 'sub_id'],
         ]
+
+    class Env(object):
+        def __init__(self,user,sub_time,running_from):
+            self.user=user
+            self.sub_time=sub_time
+            self.running_from=running_from
 
     def __str__(self):
         """Text representation of subscription."""
@@ -347,11 +359,17 @@ class Subscription(models.Model, object):
 
     def get_params(self):
         """Get params dict."""
-        return ejson.loads(self.params_ejson or '{}')
+        params = self.params_ejson or []
+        params.insert(0,self.Env(
+            self.user,
+            self.created_time,
+            "subed"
+        ))
+        return params
 
     def set_params(self, vals):
         """Set params dict."""
-        self.params_ejson = ejson.dumps(vals or {})
+        self.params_ejson = vals or []
 
     params = property(get_params, set_params)
 

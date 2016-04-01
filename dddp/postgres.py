@@ -70,7 +70,7 @@ class PostgresGreenlet(gevent.Greenlet):
         logging.getLogger('dddp').info('=> Started PostgresGreenlet.')
 
         cur = conn.cursor()
-        cur.execute('LISTEN "ddp";')
+        cur.execute('LISTEN "ddp-%s";' % os.getpid())
         while not self._stop_event.is_set():
             try:
                 self.select_greenlet = gevent.spawn(
@@ -107,7 +107,7 @@ class PostgresGreenlet(gevent.Greenlet):
                         "Got NOTIFY (pid=%d, payload=%r)",
                         notify.pid, notify.payload,
                     )
-
+                    print(notify)
                     # read the header and check seq/fin.
                     hdr, chunk = notify.payload.split('|', 1)
                     # print('RECEIVE: %s' % hdr)

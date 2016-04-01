@@ -202,6 +202,7 @@ setuptools.setup(
         'psycogreen>=1.0',
         'pybars3>=0.9.1',
         'six>=1.10.0',
+        "django-pgjsonb"
     ],
     extras_require={
         # We need gevent version dependent upon environment markers, but the

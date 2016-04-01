@@ -122,6 +122,9 @@ class Users(Collection):
         'pk',
     ]
 
+    def user_ids_for_object(self,obj):
+        return [obj.pk]
+
     def serialize(self, obj, *args, **kwargs):
         """Serialize user as per Meteor accounts serialization."""
         # use default serialization, then modify to suit our needs.
@@ -255,7 +258,7 @@ class Auth(APIMixin):
     def update_subs(new_user_id):
         """Update subs to send added/removed for collections with user_rel."""
         for sub in Subscription.objects.filter(connection=this.ws.connection):
-            params = loads(sub.params_ejson)
+            params = sub.params
             pub = API.get_pub_by_name(sub.publication)
 
             # calculate the querysets prior to update
@@ -329,9 +332,24 @@ class Auth(APIMixin):
             cls.auth_failed(username=username, token=token)
         return user
 
+    @classmethod
+    def validated_user_by_session_id(self,session_id):
+        from importlib import import_module
+        from django.contrib.auth import get_user,models as auth_models
+
+        engine = import_module(settings.SESSION_ENGINE)
+        SessionStore = engine.SessionStore
+        this.session = SessionStore(session_id)
+        user=get_user(this)
+        if isinstance(user, auth_models.AnonymousUser):
+            self.auth_failed(session_id=session_id)
+        return user
+
     @staticmethod
     def check_secure():
         """Check request, return False if using SSL or local connection."""
+        if settings.DEBUG:
+            return True
         if this.request.is_secure():
             return True  # using SSL
         elif this.request.META['REMOTE_ADDR'] in [
@@ -425,6 +443,7 @@ class Auth(APIMixin):
 
     def do_login(self, user):
         """Login a user."""
+        this.user=user
         this.user_id = user.pk
         this.user_ddp_id = get_meteor_id(user)
         # silent subscription (sans sub/nosub msg) to LoggedInUser pub
@@ -459,6 +478,8 @@ class Auth(APIMixin):
             return self.login_with_password(params)
         elif 'resume' in params:
             return self.login_with_resume_token(params)
+        elif settings.SESSION_COOKIE_NAME in params:
+            return self.login_with_session_id(params)
         else:
             self.auth_failed(**params)
 
@@ -484,6 +505,13 @@ class Auth(APIMixin):
         # It will have sent the `user_login_failed` signal, no need to pass the
         # `username` argument to auth_failed().
         self.auth_failed()
+
+    def login_with_session_id(self,params):
+        self.check_secure()
+        session_id=params[settings.SESSION_COOKIE_NAME]
+        user=self.validated_user_by_session_id(session_id)
+        self.do_login(user)
+        return session_id
 
     def login_with_resume_token(self, params):
         """
