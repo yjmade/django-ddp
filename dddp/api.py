@@ -877,10 +877,10 @@ class DDP(APIMixin):
 
     def ready(self):
         """Initialisation for django-ddp (setup lookups and signal handlers)."""
+        signals.pre_migrate.connect(self.on_pre_migrate)
+        signals.post_migrate.connect(self.on_post_migrate)
         for model in self._model_cols:
             # set/unset self._in_migration
-            signals.pre_migrate.connect(self.on_pre_migrate,sender=model)
-            signals.post_migrate.connect(self.on_post_migrate,sender=model)
             # update self._ddp_subscribers before changes made
             signals.pre_delete.connect(self.on_pre_change,sender=model)
             signals.pre_save.connect(self.on_pre_change,sender=model)
