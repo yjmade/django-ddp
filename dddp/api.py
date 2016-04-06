@@ -1056,6 +1056,8 @@ class DDP(APIMixin):
                     continue  # nobody subscribed
                 pids_connection_ids=collections.defaultdict(list)
                 for connection_id in connection_ids:
+                    if connection_id not in connection_ids_pids:
+                        continue
                     pids_connection_ids[connection_ids_pids[connection_id]].append(connection_id)
 
                 for pid,connection_ids in pids_connection_ids.iteritems():
