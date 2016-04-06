@@ -262,6 +262,9 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
         #         # yield to other greenlets before processing next msg
         #         gevent.sleep()
 
+    def _on_ddp_exception(self,msg,data,exc_type,exc,tb):
+        pass
+
     def process_ddp(self, data):
         """Process a single DDP message."""
         msg_id = data.get('id', None)
@@ -274,56 +277,52 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
             )
             return
             # dispatch message
-        import ipdb
-        with ipdb.launch_ipdb_on_exception():
-            try:
-                self.dispatch(msg, data)
-            except Exception as err:  # pylint: disable=broad-except
-                # This should be the only protocol exception handler
-                traceback.print_exc()
-                kwargs = {
-                    'msg': {'method': 'result'}.get(msg, 'error'),
+        try:
+            self.dispatch(msg, data)
+        except Exception as err:  # pylint: disable=broad-except
+            # This should be the only protocol exception handler
+            traceback.print_exc()
+            kwargs = {
+                'msg': {'method': 'result'}.get(msg, 'error'),
+            }
+            if msg_id is not None:
+                kwargs['id'] = msg_id
+            if isinstance(err, MeteorError):
+                error = err.as_dict()
+            else:
+                self._on_ddp_exception(msg, data, *sys.exc_info())
+                error = {
+                    'error': 500,
+                    'reason': '%s' % err,
                 }
-                if msg_id is not None:
-                    kwargs['id'] = msg_id
-                if isinstance(err, MeteorError):
-                    error = err.as_dict()
-                else:
-                    if getattr(settings,"HALT_WHEN_DDP_ERROR",False):
-                        tp,value,tb=sys.exc_info()
-                        six.reraise(tp, value, tb)
-                    error = {
-                        'error': 500,
-                        'reason': '%s' % err,
-                    }
-                if kwargs['msg'] == 'error':
-                    kwargs.update(error)
-                else:
-                    kwargs['error'] = error
-                if not isinstance(err, MeteorError):
-                    # not a client error, should always be logged.
-                    stack, _ = safe_call(
-                        self.logger.error, '%r %r', msg, data, exc_info=1,
+            if kwargs['msg'] == 'error':
+                kwargs.update(error)
+            else:
+                kwargs['error'] = error
+            if not isinstance(err, MeteorError):
+                # not a client error, should always be logged.
+                stack, _ = safe_call(
+                    self.logger.error, '%r %r', msg, data, exc_info=1,
+                )
+                if stack is not None:
+                    # something went wrong while logging the error, revert to
+                    # writing a stack trace to stderr.
+                    traceback.print_exc(file=sys.stderr)
+                    sys.stderr.write(
+                        'Additionally, while handling the above error the '
+                        'following error was encountered:\n'
                     )
-                    if stack is not None:
-                        # something went wrong while logging the error, revert to
-                        # writing a stack trace to stderr.
-                        traceback.print_exc(file=sys.stderr)
-                        sys.stderr.write(
-                            'Additionally, while handling the above error the '
-                            'following error was encountered:\n'
-                        )
-                        sys.stderr.write(stack)
-                elif settings.DEBUG:
-                    print('ERROR: %s' % err)
-                    dprint('msg', msg)
-                    dprint('data', data)
-                    error.setdefault('details', traceback.format_exc())
-                    # print stack trace for client errors when DEBUG is True.
-                    print(error['details'])
-                self.reply(**kwargs)
-                if msg_id and msg == 'method':
-                    self.reply('updated', methods=[msg_id])
+                    sys.stderr.write(stack)
+            elif settings.DEBUG:
+                print('ERROR: %s' % err)
+                dprint('msg', msg)
+                dprint('data', data)
+                error.setdefault('details', traceback.format_exc())
+                # print stack trace for client errors when DEBUG is True.
+                print(error['details'])
+            self.reply(**kwargs)
+            if msg_id and msg == 'method':
+                self.reply('updated', methods=[msg_id])
 
     @transaction.atomic
     def dispatch(self, msg, kwargs):
