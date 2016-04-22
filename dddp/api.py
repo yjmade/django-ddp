@@ -10,7 +10,7 @@ import itertools
 # requirements
 from django.conf import settings
 import django.contrib.postgres.fields
-from django.db import connections, router, transaction
+from django.db import connections, router
 from django.db import models
 from django.db.models import Q
 try:
@@ -29,7 +29,7 @@ import six
 # django-ddp
 from dddp import AlreadyRegistered, this, ADDED, CHANGED, REMOVED, MeteorError
 from dddp.models import (
-    AleaIdField, Connection, Subscription, SubscriptionCollection,get_meteor_id, get_meteor_ids,
+    AleaIdField, Connection, Subscription, SubscriptionCollection, get_meteor_id, get_meteor_ids,
 )
 from functools import wraps
 
@@ -190,7 +190,7 @@ class CollectionMeta(APIMeta):
 
     """DDP Collection metaclass."""
 
-    def __new__(mcs, name, bases, attrs):
+    def __new__(cls, name, bases, attrs):
         """Create a new Collection class."""
         attrs.update(
             api_path_prefix_format=COLLECTION_PATH_FORMAT,
@@ -200,7 +200,7 @@ class CollectionMeta(APIMeta):
             attrs.update(
                 name=model_name(model),
             )
-        return super(CollectionMeta, mcs).__new__(mcs, name, bases, attrs)
+        return super(CollectionMeta, cls).__new__(cls, name, bases, attrs)
 
 
 @six.add_metaclass(CollectionMeta)
@@ -214,19 +214,19 @@ class Collection(APIMixin):
     order_by = None
     user_rel = None
     always_allow_superusers = True
-    sync_fields=None
-    no_sync_fields=None
+    sync_fields = None
+    no_sync_fields = None
 
     @cached_property
     def _to_sync_fields(self):
         if self.sync_fields:
             return set(self.sync_fields)
 
-        no_sync_fields=self.no_sync_fields or []
+        no_sync_fields = self.no_sync_fields or []
 
         return {
             field.name
-            for field in itertools.chain(self.model._meta.local_fields,self.model._meta.local_many_to_many)
+            for field in itertools.chain(self.model._meta.local_fields, self.model._meta.local_many_to_many)
             if field.name not in no_sync_fields
         }
 
@@ -247,7 +247,7 @@ class Collection(APIMixin):
 
     @cached_property
     def aid_field(self):
-        meta=self.model._meta
+        meta = self.model._meta
         if isinstance(meta.pk, AleaIdField):
             return meta.pk
         alea_unique_fields = [
@@ -274,20 +274,20 @@ class Collection(APIMixin):
             return None
         return [self.get_reversed_user_rel(user_rel) for user_rel in self.user_rels]
 
-    def get_reversed_user_rel(self,user_rel):
-        fields=user_rel.split("__")
-        model=self.model
-        reverse_name=[]
+    def get_reversed_user_rel(self, user_rel):
+        fields = user_rel.split("__")
+        model = self.model
+        reverse_name = []
         for field_name in fields:
-            if field_name=="pk":
-                field=model._meta.pk
+            if field_name == "pk":
+                field = model._meta.pk
             else:
-                field=model._meta.get_field(field_name)
-                model=field.related_model
-                if isinstance(field, (models.ManyToManyField,models.ForeignKey,models.OneToOneField)):
-                    related_name=field.related_query_name()
-                elif isinstance(field,(models.ManyToManyRel,models.ManyToOneRel,models.OneToOneRel)):
-                    related_name=field.field.name
+                field = model._meta.get_field(field_name)
+                model = field.related_model
+                if isinstance(field, (models.ManyToManyField, models.ForeignKey, models.OneToOneField)):
+                    related_name = field.related_query_name()
+                elif isinstance(field, (models.ManyToManyRel, models.ManyToOneRel, models.OneToOneRel)):
+                    related_name = field.field.name
                 reverse_name.append(related_name)
         return "__".join(reversed(reverse_name))
 
@@ -318,15 +318,15 @@ class Collection(APIMixin):
                 # user_rel spans a join - ensure efficient SQL is generated
                 # such as `...WHERE foo_id IN (SELECT foo.id FROM ...)`
                 # rather than creating an explosion of INNER JOINS.
-                to_field_name=field.to_fields[0] if isinstance(field, models.ForeignKey) else "pk"
-                to_field_name=to_field_name or "pk"
+                to_field_name = field.to_fields[0] if isinstance(field, models.ForeignKey) else "pk"
+                to_field_name = to_field_name or "pk"
                 # import ipdb; ipdb.set_trace()
                 filter_obj = Q(**({
                     '%s__in' % name: field.related_model.objects.filter(
                         **({rel: user})
                     ).values(to_field_name)
                 } if rel else {
-                    name:getattr(user, to_field_name)
+                    name: getattr(user, to_field_name)
                 }))
                 # else:
                 #     # user rel is a local field -> no joins to avoid.
@@ -477,9 +477,9 @@ class Collection(APIMixin):
             in self.field_schema()
         }
 
-    def serialize(self, obj, meteor_ids,no_sync_fields=None):
+    def serialize(self, obj, meteor_ids, no_sync_fields=None):
         """Generate a DDP msg for obj with specified msg type."""
-        no_sync_fields=no_sync_fields or []
+        no_sync_fields = no_sync_fields or []
         # check for F expressions
         exps = [
             name for name, val in vars(obj).items()
@@ -501,23 +501,23 @@ class Collection(APIMixin):
         meta = self.model._meta
         for field in meta.local_fields:
             if field.name not in self._to_sync_fields or field.name in no_sync_fields:
-                fields.pop(field.name,None)
-                fields.pop(field.attname,None)
+                fields.pop(field.name, None)
+                fields.pop(field.attname, None)
                 continue
             rel = getattr(field, 'rel', None)
             if rel:
                 if rel.model in API._model_cols:
                     # use field value which should set by select_related()
-                    to_field_name=field.to_fields[0]
-                    if to_field_name and (to_field_name=="aid" or isinstance(field.related_model._meta.get_field(to_field_name),AleaIdField)):
-                        fields[field.column]=getattr(obj, field.attname)
+                    to_field_name = field.to_fields[0]
+                    if to_field_name and (to_field_name == "aid" or isinstance(field.related_model._meta.get_field(to_field_name), AleaIdField)):
+                        fields[field.column] = getattr(obj, field.attname)
                     else:
                         fields[field.column] = get_meteor_id(
                             field.related_model,
                             getattr(obj, field.attname),
                         )
                 else:
-                    fields[field.column]=getattr(obj,field.attname)
+                    fields[field.column] = getattr(obj, field.attname)
                 fields.pop(field.name)
             elif isinstance(field, django.contrib.postgres.fields.ArrayField):
                 fields[field.name] = field.to_python(fields.pop(field.name))
@@ -533,20 +533,20 @@ class Collection(APIMixin):
         for field in meta.local_many_to_many:
             if field.name not in self._to_sync_fields or field.name in no_sync_fields:
                 continue
-            qs=getattr(obj,field.name).all()
+            qs = getattr(obj, field.name).all()
             try:
                 if field.rel.model in API._model_cols:
-                    field_name=API._model_aid[qs.model].name
+                    field_name = API._model_aid[qs.model].name
                 else:
-                    field_name="pk"
-                data_=list(qs.values_list(field_name,flat=True))
-                if data_ and isinstance(data_[0],uuid.UUID):
-                    data_=[str(item) for item in data_]
+                    field_name = "pk"
+                data_ = list(qs.values_list(field_name, flat=True))
+                if data_ and isinstance(data_[0], uuid.UUID):
+                    data_ = [str(item) for item in data_]
             except KeyError:
                 data_ = get_meteor_ids(
-                    field.rel.to, qs.values_list("pk",flat=True),
+                    field.rel.to, qs.values_list("pk", flat=True),
                 ).values()
-            fields['%s_ids' % field.name]=data_
+            fields['%s_ids' % field.name] = data_
         return data
 
     def obj_change_as_msg(self, obj, msg, meteor_ids=None):
@@ -575,12 +575,12 @@ class PublicationMeta(APIMeta):
 
     """DDP Publication metaclass."""
 
-    def __new__(mcs, name, bases, attrs):
+    def __new__(cls, name, bases, attrs):
         """Create a new Publication class."""
         attrs.update(
             api_path_prefix_format='publication/{name}/',
         )
-        return super(PublicationMeta, mcs).__new__(mcs, name, bases, attrs)
+        return super(PublicationMeta, cls).__new__(cls, name, bases, attrs)
 
 
 @six.add_metaclass(PublicationMeta)
@@ -601,7 +601,7 @@ class Publication(APIMixin):
                 raise NotImplementedError(
                     'Must set either queries or implement get_queries method.',
                 )
-            if len(params)>1:  # Env object
+            if len(params) > 1:  # Env object
                 raise NotImplementedError(
                     'Publication params not implemented on %r publication.' % (
                         self.name,
@@ -620,14 +620,14 @@ class Publication(APIMixin):
         # apply the desired user details
         this.user_id = None if user is None else user.pk
         this.user_ddp_id = None if user is None else get_meteor_id(user)
-        this.user=user
+        this.user = user
         try:
             return get_queries(*params)
         finally:
             # restore the old user details
             this.user_id = old_user_id
             this.user_ddp_id = old_user_ddp_id
-            this.user=old_user
+            this.user = old_user
 
     @api_endpoint
     def collections(self, *params):
@@ -652,8 +652,8 @@ class DDP(APIMixin):
     def __init__(self):
         """DDP API init."""
         self._registry = {}
-        self._model_cols=collections.defaultdict(list)
-        self._model_aid={}
+        self._model_cols = collections.defaultdict(list)
+        self._model_aid = {}
         self._ddp_subscribers = {}
 
     def get_collection(self, model):
@@ -680,8 +680,8 @@ class DDP(APIMixin):
         if hasattr(qs, 'model'):
             return (qs, self.get_collection(qs.model))
         elif isinstance(qs, (list, tuple)):
-            if len(qs)==3:
-                qs[0]._item_checker=qs[2]
+            if len(qs) == 3:
+                qs[0]._item_checker = qs[2]
             return (qs[0], self.get_col_by_name(qs[1]))
         else:
             raise TypeError('Invalid query spec: %r' % qs)
@@ -691,7 +691,7 @@ class DDP(APIMixin):
         if params is None:
             params = sub.params
 
-        params[0].running_from="do_sub"
+        params[0].running_from = "do_sub"
         if pub is None:
             pub = self.get_pub_by_name(sub.publication)
         queries = collections.OrderedDict(
@@ -765,7 +765,7 @@ class DDP(APIMixin):
             return
         # re-read from DB so we can get transaction ID (xmin)
         sub = Subscription.objects.select_related("user").extra(**XMIN).get(pk=sub.pk)
-        to_create_sub_cols=[]
+        to_create_sub_cols = []
         for col, qs in self.sub_unique_objects(
                 sub, sub.params, pub, xmin__lte=sub.xmin,
         ):
@@ -833,7 +833,7 @@ class DDP(APIMixin):
             handler = self.api_path_map()[method]
         except KeyError:
             raise MeteorError(404, 'Method not found', method)
-        if isinstance(params,dict):
+        if isinstance(params, dict):
             result = handler(**params)
         else:
             try:
@@ -865,7 +865,7 @@ class DDP(APIMixin):
             if isinstance(api, Collection):
                 self._model_cols[api.model].append(api)
                 if api.aid_field:
-                    self._model_aid[api.model]=api.aid_field
+                    self._model_aid[api.model] = api.aid_field
 
     @api_endpoint
     def schema(self):
@@ -884,12 +884,12 @@ class DDP(APIMixin):
         for model in self._model_cols:
             # set/unset self._in_migration
             # update self._ddp_subscribers before changes made
-            signals.pre_delete.connect(self.on_pre_change,sender=model)
-            signals.pre_save.connect(self.on_pre_change,sender=model)
+            signals.pre_delete.connect(self.on_pre_change, sender=model)
+            signals.pre_save.connect(self.on_pre_change, sender=model)
             # emit change message after changes made
-            signals.post_save.connect(self.on_post_save,sender=model)
-            signals.post_delete.connect(self.on_post_delete,sender=model)
-            signals.m2m_changed.connect(self.on_m2m_changed,sender=model)
+            signals.post_save.connect(self.on_post_save, sender=model)
+            signals.post_delete.connect(self.on_post_delete, sender=model)
+            signals.m2m_changed.connect(self.on_m2m_changed, sender=model)
             # call ready on each registered API endpoint
         for api_provider in self.api_providers:
             api_provider.ready()
@@ -982,18 +982,18 @@ class DDP(APIMixin):
             using=kwargs['using'],
         )
 
-    def valid_subscribers(self,model,obj,using):
+    def valid_subscribers(self, model, obj, using):
         col_connection_ids = collections.defaultdict(set)
-        user_q=Q()
-        cols=self._model_cols[model]
+        user_q = Q()
+        cols = self._model_cols[model]
         for col in cols:
-            col_q=Q()
+            col_q = Q()
 
             if not col.reversed_user_rel:
                 continue
             for reversed_user_rel in col.reversed_user_rel:
-                col_q |= Q(**{"__".join(["user"]+filter(None,[reversed_user_rel])):obj})
-            col_q=Q(collections__collection_name=col.name) & col_q
+                col_q |= Q(**{"__".join(["user"] + filter(None, [reversed_user_rel])): obj})
+            col_q = Q(collections__collection_name=col.name) & col_q
             user_q |= col_q
         for sub in Subscription.objects.filter(
             collections__model_name=model_name(model),
@@ -1043,8 +1043,8 @@ class DDP(APIMixin):
         except AttributeError:
             my_connection_id = None
         meteor_ids = {}
-        all_connection_ids=set(itertools.chain(*old_col_connection_ids.values())) | set(itertools.chain(*new_col_connection_ids.values()))
-        connection_ids_pids=dict(Connection.objects.filter(pk__in=all_connection_ids).values_list("pk","pid"))
+        all_connection_ids = set(itertools.chain(*old_col_connection_ids.values())) | set(itertools.chain(*new_col_connection_ids.values()))
+        connection_ids_pids = dict(Connection.objects.filter(pk__in=all_connection_ids).values_list("pk", "pid"))
         cursor = connections[using].cursor()
         for col in set(old_col_connection_ids).union(new_col_connection_ids):
             old_connection_ids = old_col_connection_ids[col]
@@ -1056,13 +1056,13 @@ class DDP(APIMixin):
             ):
                 if not connection_ids:
                     continue  # nobody subscribed
-                pids_connection_ids=collections.defaultdict(list)
+                pids_connection_ids = collections.defaultdict(list)
                 for connection_id in connection_ids:
                     if connection_id not in connection_ids_pids:
                         continue
                     pids_connection_ids[connection_ids_pids[connection_id]].append(connection_id)
 
-                for pid,connection_ids in pids_connection_ids.iteritems():
+                for pid, connection_ids in pids_connection_ids.iteritems():
                     payload = col.obj_change_as_msg(obj, msg, meteor_ids)
                     payload['_connection_ids'] = sorted(connection_ids)
                     if my_connection_id is not None:
@@ -1096,15 +1096,15 @@ class DDP(APIMixin):
                         )
                         header['seq'] += 1  # increment sequence.
 
-    def login_required(self,func):
+    def login_required(self, func):
         @wraps(func)
-        def wrap(*args,**kwargs):
-            if not (getattr(this,"user",None) and this.user.pk):
-                raise MeteorError(403,"Not login")
-            return func(*args,**kwargs)
+        def wrap(*args, **kwargs):
+            if not (getattr(this, "user", None) and this.user.pk):
+                raise MeteorError(403, "Not login")
+            return func(*args, **kwargs)
         return wrap
 
-    def send_to_users(self,users,msgs,using="default"):
+    def send_to_users(self, users, msgs, using="default"):
         cursor = connections[using].cursor()
 
         try:
@@ -1112,18 +1112,18 @@ class DDP(APIMixin):
         except AttributeError:
             my_connection_id = None
 
-        connection_ids_pids=collections.defaultdict(list)
-        for con_id,pid in Subscription.objects.filter(user__in=users,publication="LoggedInUser").values_list("connection","connection__pid"):
+        connection_ids_pids = collections.defaultdict(list)
+        for con_id, pid in Subscription.objects.filter(user__in=users, publication="LoggedInUser").values_list("connection", "connection__pid"):
             connection_ids_pids[pid].append(con_id)
 
         for msg in msgs:
-            for pid,connection_ids in connection_ids_pids.items():
+            for pid, connection_ids in connection_ids_pids.items():
                 header = {
                     'uuid': uuid.uuid1().int,  # UUID1 should be unique
                     'seq': 1,  # increments for each 8KB chunk
                     'fin': 0,  # zero if more chunks expected, 1 if last chunk.
                 }
-                payload=dict(msg,_connection_ids=sorted(connection_ids))
+                payload = dict(msg, _connection_ids=sorted(connection_ids))
                 if my_connection_id is not None:
                     payload['_sender'] = my_connection_id
                     if my_connection_id in connection_ids:
