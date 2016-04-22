@@ -258,6 +258,8 @@ class Collection(APIMixin):
         if len(alea_unique_fields) == 1:
             # found an AleaIdField with unique=True, assume it's got the value.
             return alea_unique_fields[0]
+        if any(field.name == "aid" for field in alea_unique_fields):
+            return meta.get_field("aid")
         return None
 
     @cached_property
