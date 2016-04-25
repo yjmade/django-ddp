@@ -10,6 +10,7 @@ import os
 import psycopg2  # green
 import psycopg2.extensions
 import socket
+import traceback
 
 
 class PostgresGreenlet(gevent.Greenlet):
@@ -102,45 +103,48 @@ class PostgresGreenlet(gevent.Greenlet):
             state = conn.poll()
             if state == psycopg2.extensions.POLL_OK:
                 while conn.notifies:
-                    notify = conn.notifies.pop()
-                    self.logger.info(
-                        "Got NOTIFY (pid=%d, payload=%r)",
-                        notify.pid, notify.payload,
-                    )
-                    print(notify)
-                    # read the header and check seq/fin.
-                    hdr, chunk = notify.payload.split('|', 1)
-                    # print('RECEIVE: %s' % hdr)
-                    header = ejson.loads(hdr)
-                    uuid = header['uuid']
-                    size, chunks = self.chunks.setdefault(uuid, [0, {}])
-                    if header['fin']:
-                        size = self.chunks[uuid][0] = header['seq']
+                    try:
+                        notify = conn.notifies.pop(0)
+                        self.logger.info(
+                            "Got NOTIFY (pid=%d, payload=%r)",
+                            notify.pid, notify.payload,
+                        )
+                        print(notify)
+                        # read the header and check seq/fin.
+                        hdr, chunk = notify.payload.split('|', 1)
+                        # print('RECEIVE: %s' % hdr)
+                        header = ejson.loads(hdr)
+                        uuid = header['uuid']
+                        size, chunks = self.chunks.setdefault(uuid, [0, {}])
+                        if header['fin']:
+                            size = self.chunks[uuid][0] = header['seq']
 
-                    # stash the chunk
-                    chunks[header['seq']] = chunk
+                        # stash the chunk
+                        chunks[header['seq']] = chunk
 
-                    if len(chunks) != size:
-                        # haven't got all the chunks yet
-                        continue  # process next NOTIFY in loop
+                        if len(chunks) != size:
+                            # haven't got all the chunks yet
+                            continue  # process next NOTIFY in loop
 
-                    # got the last chunk -> process it.
-                    data = ''.join(
-                        chunk for _, chunk in sorted(chunks.items())
-                    )
-                    del self.chunks[uuid]  # don't forget to cleanup!
-                    data = ejson.loads(data)
-                    sender = data.pop('_sender', None)
-                    tx_id = data.pop('_tx_id', None)
-                    for connection_id in data.pop('_connection_ids'):
-                        try:
-                            websocket = self.connections[connection_id]
-                        except KeyError:
-                            continue  # connection not in this process
-                        if connection_id == sender:
-                            websocket.send(data, tx_id=tx_id)
-                        else:
-                            websocket.send(data)
+                        # got the last chunk -> process it.
+                        data = ''.join(
+                            chunk for _, chunk in sorted(chunks.items())
+                        )
+                        del self.chunks[uuid]  # don't forget to cleanup!
+                        data = ejson.loads(data)
+                        sender = data.pop('_sender', None)
+                        tx_id = data.pop('_tx_id', None)
+                        for connection_id in data.pop('_connection_ids'):
+                            try:
+                                websocket = self.connections[connection_id]
+                            except KeyError:
+                                continue  # connection not in this process
+                            if connection_id == sender:
+                                websocket.send(data, tx_id=tx_id)
+                            else:
+                                websocket.send(data)
+                    except Exception:
+                        traceback.print_exc()
                 break
             elif state == psycopg2.extensions.POLL_WRITE:
                 gevent.select.select([], [conn.fileno()], [])
