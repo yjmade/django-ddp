@@ -9,22 +9,19 @@ import itertools
 import sys
 import os
 import traceback
-from time import time
 
 from six.moves import range as irange
-import six
 import ejson
-import gevent
 import geventwebsocket
 from django.conf import settings
 from django.core import signals
 from django.core.handlers.base import BaseHandler
-from django.core.handlers.wsgi import WSGIRequest,WSGIHandler
+from django.core.handlers.wsgi import WSGIRequest, WSGIHandler
 from django.db import connection, transaction
 
 from dddp import alea, this, ADDED, CHANGED, REMOVED, MeteorError
 
-dj_handler=WSGIHandler()
+dj_handler = WSGIHandler()
 
 
 def safe_call(func, *args, **kwargs):
@@ -171,10 +168,10 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
         safe_call(self.logger.info, '+ %s OPEN', self)
         # self.send('o')
         # self.send('a["{\\"server_id\\":\\"0\\"}"]')
-        self.send({"server_id":"0"})
+        self.send({"server_id": "0"})
 
     def login_with_cookie(self):
-        from dddp.models import get_meteor_id,meteor_random_id
+        from dddp.models import get_meteor_id, meteor_random_id
         from dddp.api import API
         if dj_handler._request_middleware is None:
             dj_handler.load_middleware()
@@ -188,7 +185,7 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
             this.user_ddp_id = get_meteor_id(this.request.user)
             # silent subscription (sans sub/nosub msg) to LoggedInUser pub
             this.user_sub_id = meteor_random_id()
-            this.user=this.request.user
+            this.user = this.request.user
             API.do_sub(this.user_sub_id, 'LoggedInUser', silent=True)
 
     def __str__(self):
@@ -208,8 +205,7 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
         """Process a message received from remote."""
         if self.ws.closed:
             return None
-        this._task_id=alea.Alea().random_string(17, alea.UNMISTAKABLE)
-        start=time()
+        this._task_id = alea.Alea().random_string(17, alea.UNMISTAKABLE)
         try:
             safe_call(self.logger.debug, '< %s %r', self, message)
 
@@ -221,7 +217,6 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
         except geventwebsocket.WebSocketError:
             self.ws.close()
         finally:
-            print("finish %s [%.2fms]" % (this._task_id,(time()-start)*1000))
             del this._task_id
 
     def ddp_frames_from_message(self, message):
@@ -230,7 +225,7 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
 
         try:
             msgs = ejson.loads(message)
-            print("receive %s %s-%s: %s" % (this._task_id,this.request.META["REMOTE_ADDR"],this.user,msgs))
+            print("receive %s %s-%s: %s" % (this._task_id, this.request.META["REMOTE_ADDR"], this.user, msgs))
         except ValueError:
             self.reply(
                 'error', error=400, reason='Data is not valid EJSON',
@@ -262,7 +257,7 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
         #         # yield to other greenlets before processing next msg
         #         gevent.sleep()
 
-    def _on_ddp_exception(self,msg,data,exc_type,exc,tb):
+    def _on_ddp_exception(self, msg, data, exc_type, exc, tb):
         pass
 
     def process_ddp(self, data):
@@ -391,14 +386,10 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
                         except KeyError:
                             continue  # client doesn't have this, don't send.
                 # data = 'a%s' % ejson.dumps([ejson.dumps(data)])
-                data=ejson.dumps(data)
+                data = ejson.dumps(data)
 
             # send message
             safe_call(self.logger.debug, '> %s %r', self, data)
-            try:
-                print("send %s %s-%s: %s" % (getattr(this,"_task_id",None),this.request.META["REMOTE_ADDR"],this.user,data))
-            except:
-                print("send",getattr(this,"_task_id",None),data)
             try:
                 self.ws.send(data)
             except geventwebsocket.WebSocketError:
@@ -473,7 +464,7 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
             self.reply('nosub')
     recv_unsub.err = 'Malformed unsubscription'
 
-    def recv_method(self, method, params, id_, randomSeed=None):
+    def recv_method(self, method, params, id_, randomSeed=None):  # noqa
         """DDP method handler."""
         if randomSeed is not None:
             this.random_streams.random_seed = randomSeed
