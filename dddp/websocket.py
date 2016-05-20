@@ -225,7 +225,6 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
 
         try:
             msgs = ejson.loads(message)
-            print("receive %s %s-%s: %s" % (this._task_id, this.request.META["REMOTE_ADDR"], this.user, msgs))
         except ValueError:
             self.reply(
                 'error', error=400, reason='Data is not valid EJSON',
