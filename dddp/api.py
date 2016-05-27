@@ -1104,49 +1104,57 @@ class DDP(APIMixin):
             return func(*args, **kwargs)
         return wrap
 
-    def send_to_users(self, users, msgs, using="default"):
+    def _send_to_connection(self, connection_ids, pid, msg, using):
         cursor = connections[using].cursor()
-
         try:
             my_connection_id = this.ws.connection.pk
         except AttributeError:
             my_connection_id = None
 
-        connection_ids_pids = collections.defaultdict(list)
-        for con_id, pid in Subscription.objects.filter(user__in=users, publication="LoggedInUser").values_list("connection", "connection__pid"):
-            connection_ids_pids[pid].append(con_id)
+        header = {
+            'uuid': uuid.uuid1().int,  # UUID1 should be unique
+            'seq': 1,  # increments for each 8KB chunk
+            'fin': 0,  # zero if more chunks expected, 1 if last chunk.
+        }
+        payload = dict(msg, _connection_ids=sorted(connection_ids))
+        if my_connection_id is not None:
+            payload['_sender'] = my_connection_id
+            if my_connection_id in connection_ids:
+                # msg must go to connection that initiated the change
+                payload['_tx_id'] = this.ws.get_tx_id()
+        data = ejson.dumps(payload)
+        while data:
+            hdr = ejson.dumps(header)
+            # use all available payload space for chunk
+            max_len = 8000 - len(hdr) - 100
+            # take a chunk from data
+            chunk, data = data[:max_len], data[max_len:]
+            if not data:
+                # last chunk, set fin=1.
+                header['fin'] = 1
+                hdr = ejson.dumps(header)
+            # print('NOTIFY: %s' % hdr)
+            cursor.execute(
+                'NOTIFY "ddp-%s", %%s' % pid,
+                [
+                    '%s|%s' % (hdr, chunk),  # pipe separates hdr|chunk.
+                ],
+            )
+            header['seq'] += 1  # increment sequence.
 
+    def _send_to_connections(self, con_id_pid_list, msgs, using):
+        connection_ids_pids = collections.defaultdict(list)
+        for con_id, pid in con_id_pid_list:
+            connection_ids_pids[pid].append(con_id)
         for msg in msgs:
             for pid, connection_ids in connection_ids_pids.items():
-                header = {
-                    'uuid': uuid.uuid1().int,  # UUID1 should be unique
-                    'seq': 1,  # increments for each 8KB chunk
-                    'fin': 0,  # zero if more chunks expected, 1 if last chunk.
-                }
-                payload = dict(msg, _connection_ids=sorted(connection_ids))
-                if my_connection_id is not None:
-                    payload['_sender'] = my_connection_id
-                    if my_connection_id in connection_ids:
-                        # msg must go to connection that initiated the change
-                        payload['_tx_id'] = this.ws.get_tx_id()
-                data = ejson.dumps(payload)
-                while data:
-                    hdr = ejson.dumps(header)
-                    # use all available payload space for chunk
-                    max_len = 8000 - len(hdr) - 100
-                    # take a chunk from data
-                    chunk, data = data[:max_len], data[max_len:]
-                    if not data:
-                        # last chunk, set fin=1.
-                        header['fin'] = 1
-                        hdr = ejson.dumps(header)
-                    # print('NOTIFY: %s' % hdr)
-                    cursor.execute(
-                        'NOTIFY "ddp-%s", %%s' % pid,
-                        [
-                            '%s|%s' % (hdr, chunk),  # pipe separates hdr|chunk.
-                        ],
-                    )
-                    header['seq'] += 1  # increment sequence.
+                self._send_to_connection(connection_ids, pid, msg, using)
+
+    def send_to_users(self, users, msgs, using="default"):
+        return self._send_to_connections(Subscription.objects.filter(user__in=users, publication="LoggedInUser").values_list("connection", "connection__pid"), msgs, using)
+
+    def broadcast(self, msgs, using="default"):
+        return self._send_to_connections(Connection.objects.all().values_list("pk", "pid"), msgs, using)
+
 
 API = DDP()
