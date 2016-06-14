@@ -42,7 +42,7 @@ def get_meteor_id(obj_or_model, obj_pk=None):
         return obj_pk
 
     try:
-        aid_field=API._model_aid[model]
+        aid_field = API._model_aid[model]
     except KeyError:
         pass
     else:
@@ -63,8 +63,8 @@ def get_meteor_id(obj_or_model, obj_pk=None):
 
     # fallback to using AleaIdField from ObjectMapping model.
     content_type = ContentType.objects.get_for_model(model)
-    cache_name="DDP_OBJECTMAP_%s_%s" % (content_type.pk,obj_pk)
-    meteor_id=cache.get(cache_name)
+    cache_name = "DDP_OBJECTMAP_%s_%s" % (content_type.pk, obj_pk)
+    meteor_id = cache.get(cache_name)
     if not meteor_id:
         try:
             meteor_id = ObjectMapping.objects.values_list(
@@ -79,7 +79,7 @@ def get_meteor_id(obj_or_model, obj_pk=None):
                 object_id=obj_pk,
                 meteor_id=meteor_random_id('/collection/%s' % meta),
             ).meteor_id
-        cache.set(cache_name,meteor_id)
+        cache.set(cache_name, meteor_id)
     return meteor_id
 get_meteor_id.short_description = 'DDP ID'  # nice title for admin list_display
 
@@ -101,7 +101,7 @@ def get_meteor_ids(model, object_ids):
             (obj_pk, obj_pk) for obj_pk in object_ids
         )
     try:
-        aid_field=API._model_aid[model]
+        aid_field = API._model_aid[model]
         query = model.objects.filter(
             pk__in=object_ids,
         ).values_list('pk', aid_field.name)
@@ -310,7 +310,7 @@ class Connection(models.Model, object):
     server_addr = models.CharField(max_length=255)
     remote_addr = models.CharField(max_length=255)
     version = models.CharField(max_length=255)
-    pid=models.IntegerField(db_index=True,null=True)
+    pid = models.IntegerField(db_index=True, null=True)
 
     def __str__(self):
         """Text representation of subscription."""
@@ -330,8 +330,8 @@ class Subscription(models.Model, object):
     sub_id = models.CharField(max_length=17)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, blank=True, null=True)
     publication = models.CharField(max_length=255)
-    params_ejson = JSONField(default={},encode_kwargs={"cls":ejson.EJSONEncoder},decode_kwargs={"cls":ejson.EJSONDecoder})
-    created_time=models.DateTimeField(auto_now_add=True)
+    params_ejson = JSONField(default={}, encode_kwargs={"cls": ejson.EJSONEncoder}, decode_kwargs={"cls": ejson.EJSONDecoder})
+    created_time = models.DateTimeField(auto_now_add=True)
 
     class Meta(object):
 
@@ -342,10 +342,11 @@ class Subscription(models.Model, object):
         ]
 
     class Env(object):
-        def __init__(self,user,sub_time,running_from):
-            self.user=user
-            self.sub_time=sub_time
-            self.running_from=running_from
+
+        def __init__(self, user, sub_time, running_from):
+            self.user = user
+            self.sub_time = sub_time
+            self.running_from = running_from
 
     def __str__(self):
         """Text representation of subscription."""
@@ -360,7 +361,7 @@ class Subscription(models.Model, object):
     def get_params(self):
         """Get params dict."""
         params = self.params_ejson or []
-        params.insert(0,self.Env(
+        params.insert(0, self.Env(
             self.user,
             self.created_time,
             "subed"
@@ -369,6 +370,8 @@ class Subscription(models.Model, object):
 
     def set_params(self, vals):
         """Set params dict."""
+        if vals and isinstance(vals[0], self.Env):
+            vals = vals[1:]
         self.params_ejson = vals or []
 
     params = property(get_params, set_params)
