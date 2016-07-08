@@ -17,6 +17,7 @@ import ejson
 from dddp import meteor_random_id
 from django.core.cache import cache
 from django_pgjsonb.fields import JSONField
+import copy
 
 
 def get_meteor_id(obj_or_model, obj_pk=None):
@@ -360,7 +361,7 @@ class Subscription(models.Model, object):
 
     def get_params(self):
         """Get params dict."""
-        params = self.params_ejson or []
+        params = copy.copy(self.params_ejson or [])
         params.insert(0, self.Env(
             self.user,
             self.created_time,
