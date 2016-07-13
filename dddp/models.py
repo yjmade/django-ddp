@@ -384,8 +384,8 @@ class SubscriptionCollection(models.Model):
     """Collections for a subscription."""
 
     subscription = models.ForeignKey(Subscription, related_name='collections')
-    model_name = models.CharField(max_length=255)
-    collection_name = models.CharField(max_length=255)
+    model_name = models.CharField(max_length=255, db_index=True)
+    collection_name = models.CharField(max_length=255, db_index=True)
 
     def __str__(self):
         """Human readable representation of colleciton for a subscription."""
