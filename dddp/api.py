@@ -983,6 +983,7 @@ class DDP(APIMixin):
         )
 
     def valid_subscribers(self, model, obj, using):
+        user_kls = Subscription._meta.get_field("user").related_model
         col_connection_ids = collections.defaultdict(set)
         user_q = Q()
         cols = self._model_cols[model]
@@ -992,12 +993,17 @@ class DDP(APIMixin):
             if not col.reversed_user_rel:
                 continue
             for reversed_user_rel in col.reversed_user_rel:
-                col_q |= Q(**{"__".join(["user"] + filter(None, [reversed_user_rel])): obj})
+                # col_q |= Q(**{"__".join(["user"] + filter(None, [reversed_user_rel])): obj})
+                if reversed_user_rel == "":
+                    col_q |= Q(user=obj)
+                else:
+                    col_q |= Q(user__in=user_kls.objects.filter(**{reversed_user_rel: obj}))
             col_q = Q(collections__collection_name=col.name) & col_q
             user_q |= col_q
         for sub in Subscription.objects.filter(
-            collections__model_name=model_name(model),
-        ).filter(user_q).distinct("id").select_related("user"):
+            user_q,
+            collections__model_name=model_name(model)
+        ).distinct("id").select_related("user"):
             pub = self.get_pub_by_name(sub.publication)
             try:
                 queries = list(pub.user_queries(sub.user, *sub.params))
