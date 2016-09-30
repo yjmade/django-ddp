@@ -793,7 +793,7 @@ class DDP(APIMixin):
                 meteor_ids = get_meteor_ids(
                     qs.model, qs.values_list('pk', flat=True),
                 )
-            for obj in qs.select_related():
+            for obj in qs:
                 payload = col.obj_change_as_msg(obj, ADDED, meteor_ids)
                 this.send(payload)
         if to_create_sub_cols:
