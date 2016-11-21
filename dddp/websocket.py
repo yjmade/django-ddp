@@ -283,6 +283,8 @@ class DDPWebSocketApplication(geventwebsocket.WebSocketApplication):
                 kwargs['id'] = msg_id
             if isinstance(err, MeteorError):
                 error = err.as_dict()
+                if error.args[0] == 403:
+                    self._on_ddp_exception(msg, data, *sys.exc_info())
             else:
                 self._on_ddp_exception(msg, data, *sys.exc_info())
                 error = {
