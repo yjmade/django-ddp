@@ -1157,7 +1157,7 @@ class DDP(APIMixin):
                 self._send_to_connection(connection_ids, pid, msg, using)
 
     def send_to_users(self, users, msgs, using="default"):
-        return self._send_to_connections(Subscription.objects.filter(user__in=users, publication="LoggedInUser").values_list("connection", "connection__pid"), msgs, using)
+        return self._send_to_connections(Subscription.objects.filter(user__in=users, publication="LoggedInUser").values_list("connection", "connection__pid").distinct(), msgs, using)
 
     def broadcast(self, msgs, using="default"):
         return self._send_to_connections(Connection.objects.all().values_list("pk", "pid"), msgs, using)
